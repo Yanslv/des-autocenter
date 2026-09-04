@@ -1,0 +1,260 @@
+import React, { useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useOficina } from '../context/OficinaContext';
+import { FORMA_LABEL } from '../types';
+import {
+  agruparLancamentosPorDia,
+  custoMateriais,
+  deslocarMes,
+  dreDoCaixa,
+  formatDelta,
+  lancamentosDoPeriodo,
+  mesAtualLocal,
+  rotuloMes,
+  somarCaixa,
+  somarPorForma,
+  variacaoPct,
+  type Lancamento,
+} from '../utils/financeiro';
+import { formatBRL } from '../utils/formatters';
+
+type AbaFin = 'vendas' | 'dre' | 'fechamento';
+
+const LinhaDre: React.FC<{
+  label: string;
+  valor: string;
+  destaque?: boolean;
+  tom?: 'entrada' | 'saida' | 'neutro';
+}> = ({ label, valor, destaque, tom = 'neutro' }) => {
+  const cor =
+    tom === 'entrada' ? 'text-emerald-700' : tom === 'saida' ? 'text-red-700' : 'text-neutral-900';
+  return (
+    <div className={`flex items-baseline justify-between gap-3 py-1.5 ${destaque ? 'border-t border-neutral-200 mt-1 pt-2' : ''}`}>
+      <span className={`text-sm ${destaque ? 'font-semibold' : 'text-neutral-600'}`}>{label}</span>
+      <span className={`text-sm tabular-nums ${destaque ? 'font-bold' : 'font-medium'} ${cor}`}>{valor}</span>
+    </div>
+  );
+};
+
+const Kpi: React.FC<{ label: string; valor: string; detalhe?: string }> = ({ label, valor, detalhe }) => (
+  <div className="rounded-xl border border-neutral-200 bg-white p-2.5">
+    <p className="text-[10px] text-neutral-500 font-medium leading-tight">{label}</p>
+    <p className="text-sm font-bold tabular-nums text-neutral-900 leading-tight">{valor}</p>
+    {detalhe ? <p className="text-[10px] text-neutral-400 mt-0.5 leading-tight">{detalhe}</p> : null}
+  </div>
+);
+
+const VendaLinha: React.FC<{
+  item: Lancamento;
+  clienteNome?: string;
+  onOpen?: () => void;
+}> = ({ item, clienteNome, onOpen }) => {
+  const forma = item.forma && item.forma in FORMA_LABEL ? FORMA_LABEL[item.forma as keyof typeof FORMA_LABEL] : item.forma;
+  const corpo = (
+    <>
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-mono text-xs font-semibold">{item.rotulo}</span>
+        <span className="text-sm font-semibold tabular-nums">{formatBRL(item.valor)}</span>
+      </div>
+      <div className="text-xs text-neutral-500">
+        {item.tipo === 'os' ? clienteNome || 'Cliente' : 'Balcão'}
+        {forma ? ` · ${forma}` : ''}
+      </div>
+    </>
+  );
+  if (!onOpen) {
+    return <div className="w-full text-left bg-white border border-neutral-200 rounded-sm px-2.5 py-2">{corpo}</div>;
+  }
+  return (
+    <button type="button" onClick={onOpen} className="w-full text-left bg-white border border-neutral-200 rounded-sm px-2.5 py-2">
+      {corpo}
+    </button>
+  );
+};
+
+export const FinanceiroView: React.FC<{ onOpenOS: (id: string) => void }> = ({ onOpenOS }) => {
+  const { ordens, clientes, produtos, itens, vendas, vendaItens } = useOficina();
+  const teto = mesAtualLocal();
+  const [mes, setMes] = useState(teto);
+  const [aba, setAba] = useState<AbaFin>('vendas');
+
+  const pred = (iso: string) => iso.slice(0, 7) === mes;
+  const mesPassado = deslocarMes(mes, -1);
+  const predAnterior = (iso: string) => iso.slice(0, 7) === mesPassado;
+
+  const caixa = useMemo(() => somarCaixa(vendas, ordens, pred), [vendas, ordens, mes]);
+  const caixaAnterior = useMemo(
+    () => somarCaixa(vendas, ordens, predAnterior),
+    [vendas, ordens, mesPassado]
+  );
+  const materiais = useMemo(
+    () => custoMateriais(caixa.osIds, caixa.vendaIds, itens, vendaItens, produtos),
+    [caixa, itens, vendaItens, produtos]
+  );
+  const materiaisAnterior = useMemo(
+    () =>
+      custoMateriais(caixaAnterior.osIds, caixaAnterior.vendaIds, itens, vendaItens, produtos),
+    [caixaAnterior, itens, vendaItens, produtos]
+  );
+  const dre = dreDoCaixa(caixa.total, materiais);
+  const dreAnterior = dreDoCaixa(caixaAnterior.total, materiaisAnterior);
+  const ticket = caixa.qtd > 0 ? caixa.total / caixa.qtd : 0;
+  const lancamentos = useMemo(
+    () => lancamentosDoPeriodo(vendas, ordens, pred),
+    [vendas, ordens, mes]
+  );
+  const vendasPorDia = useMemo(() => agruparLancamentosPorDia(lancamentos), [lancamentos]);
+  const porForma = useMemo(() => somarPorForma(lancamentos), [lancamentos]);
+  const deltaFat = variacaoPct(caixa.total, caixaAnterior.total);
+  const deltaRes = variacaoPct(dre.lucroBruto, dreAnterior.lucroBruto);
+  const nomeCliente = (id: string) => clientes.find((c) => c.id === id)?.nome;
+
+  const abas: { id: AbaFin; label: string }[] = [
+    { id: 'vendas', label: 'Vendas' },
+    { id: 'dre', label: 'DRE' },
+    { id: 'fechamento', label: 'Fechamento' },
+  ];
+
+  return (
+    <div className="space-y-4 pb-4">
+      <h2 className="text-lg font-semibold text-neutral-900">Financeiro</h2>
+
+      <div className="flex items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-white px-2 py-1.5">
+        <button
+          type="button"
+          aria-label="Mês anterior"
+          onClick={() => setMes((m) => deslocarMes(m, -1))}
+          className="p-1.5 text-neutral-600"
+        >
+          <ChevronLeft className="w-5 h-5" />
+        </button>
+        <span className="text-sm font-semibold">{rotuloMes(mes)}</span>
+        <button
+          type="button"
+          aria-label="Mês seguinte"
+          disabled={mes >= teto}
+          onClick={() => setMes((m) => deslocarMes(m, 1))}
+          className="p-1.5 text-neutral-600 disabled:opacity-30"
+        >
+          <ChevronRight className="w-5 h-5" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-1.5">
+        <Kpi label="Faturamento" valor={formatBRL(caixa.total)} detalhe={`${caixa.qtd} venda${caixa.qtd === 1 ? '' : 's'}`} />
+        <Kpi
+          label="Resultado"
+          valor={formatBRL(dre.lucroBruto)}
+          detalhe={`margem ${dre.margem.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`}
+        />
+        <Kpi label="OS entregues" valor={formatBRL(caixa.totalOs)} detalhe={`${caixa.qtdOs} OS`} />
+        <Kpi label="Balcão" valor={formatBRL(caixa.totalBalcao)} detalhe={`${caixa.qtdBalcao} venda${caixa.qtdBalcao === 1 ? '' : 's'}`} />
+      </div>
+
+      <div className="flex gap-1.5">
+        {abas.map((a) => (
+          <button
+            key={a.id}
+            type="button"
+            onClick={() => setAba(a.id)}
+            className={`flex-1 py-1.5 rounded-sm text-[11px] font-semibold ${
+              aba === a.id ? 'bg-[#cd3f00] text-white' : 'bg-white border border-neutral-200 text-neutral-600'
+            }`}
+          >
+            {a.label}
+          </button>
+        ))}
+      </div>
+
+      {aba === 'vendas' && (
+        <div className="space-y-3">
+          {vendasPorDia.length === 0 && (
+            <p className="text-sm text-neutral-400 text-center py-8">Nenhuma venda neste mês.</p>
+          )}
+          {vendasPorDia.map((grupo) => (
+            <div key={grupo.dia} className="space-y-1.5">
+              <div className="flex items-baseline justify-between gap-2 px-0.5">
+                <span className="text-xs font-semibold text-neutral-700">{grupo.rotulo}</span>
+                <span className="text-xs font-semibold tabular-nums text-neutral-500">{formatBRL(grupo.total)}</span>
+              </div>
+              {grupo.itens.map((l) => {
+                const os = l.osId ? ordens.find((o) => o.id === l.osId) : undefined;
+                return (
+                  <VendaLinha
+                    key={l.id}
+                    item={l}
+                    clienteNome={os ? nomeCliente(os.cliente_id) : undefined}
+                    onOpen={l.osId ? () => onOpenOS(l.osId as string) : undefined}
+                  />
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {aba === 'dre' && (
+        <div className="rounded-2xl border border-neutral-200 bg-white px-3 py-2">
+          <p className="text-[11px] uppercase tracking-wide text-neutral-500 font-semibold mb-1">
+            Demonstração do resultado
+          </p>
+          <LinhaDre label="Receita de OS" valor={formatBRL(caixa.totalOs)} tom="entrada" />
+          <LinhaDre label="Receita de balcão" valor={formatBRL(caixa.totalBalcao)} tom="entrada" />
+          <LinhaDre label="Receita bruta" valor={formatBRL(dre.receita)} destaque />
+          <LinhaDre label="(-) CMV (peças e insumos)" valor={formatBRL(dre.materiais)} tom="saida" />
+          <LinhaDre
+            label="Lucro bruto"
+            valor={formatBRL(dre.lucroBruto)}
+            destaque
+            tom={dre.lucroBruto >= 0 ? 'entrada' : 'saida'}
+          />
+          <LinhaDre
+            label="Margem bruta"
+            valor={`${dre.margem.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`}
+          />
+          <p className="text-[10px] text-neutral-400 mt-2">
+            Ticket médio {formatBRL(ticket)} · CMV pelo custo cadastrado das peças.
+          </p>
+        </div>
+      )}
+
+      {aba === 'fechamento' && (
+        <div className="space-y-3">
+          <div className="rounded-2xl border border-neutral-200 bg-white px-3 py-2">
+            <p className="text-[11px] uppercase tracking-wide text-neutral-500 font-semibold mb-1">
+              Versus {rotuloMes(mesPassado)}
+            </p>
+            <LinhaDre label="Faturamento anterior" valor={formatBRL(caixaAnterior.total)} />
+            <LinhaDre
+              label="Variação do faturamento"
+              valor={formatDelta(deltaFat)}
+              tom={deltaFat === null || deltaFat === 0 ? 'neutro' : deltaFat > 0 ? 'entrada' : 'saida'}
+            />
+            <LinhaDre label="Resultado anterior" valor={formatBRL(dreAnterior.lucroBruto)} />
+            <LinhaDre
+              label="Variação do resultado"
+              valor={formatDelta(deltaRes)}
+              tom={deltaRes === null || deltaRes === 0 ? 'neutro' : deltaRes > 0 ? 'entrada' : 'saida'}
+            />
+          </div>
+          <div className="rounded-2xl border border-neutral-200 bg-white px-3 py-2">
+            <p className="text-[11px] uppercase tracking-wide text-neutral-500 font-semibold mb-1">
+              Por forma de pagamento
+            </p>
+            {porForma.length === 0 && (
+              <p className="text-sm text-neutral-400 py-2">Sem recebimentos neste mês.</p>
+            )}
+            {porForma.map((item) => (
+              <LinhaDre
+                key={item.forma}
+                label={item.forma in FORMA_LABEL ? FORMA_LABEL[item.forma as keyof typeof FORMA_LABEL] : item.forma}
+                valor={formatBRL(item.valor)}
+                tom="entrada"
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
