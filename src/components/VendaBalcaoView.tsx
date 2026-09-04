@@ -253,25 +253,42 @@ const CarrinhoSidebar: React.FC<{
   onObs,
   onConfirmar,
 }) => (
-  <div className="fixed inset-0 z-50">
+  <div className="fixed inset-0 z-[70]">
     <button type="button" aria-label="Fechar carrinho" className="absolute inset-0 bg-black/40" onClick={onClose} />
     <aside className="absolute inset-y-0 right-0 flex w-[min(100%,22rem)] flex-col bg-white shadow-2xl">
       <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
         <h3 className="text-sm font-semibold">Carrinho</h3>
-        <button type="button" aria-label="Fechar" onClick={onClose} className="p-1">
-          <X className="h-5 w-5" />
+        <button type="button" aria-label="Fechar carrinho" onClick={onClose} className="p-2 -mr-1">
+          <X className="h-6 w-6" />
         </button>
       </div>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 pb-8">
         {cart.length === 0 && <p className="text-sm text-neutral-400">Toque num produto para adicionar.</p>}
         {cart.map((i) => {
           const p = produtos.find((x) => x.id === i.produto_id);
+          const qtd = i.eh_caixa
+            ? `${i.quantidade / (p?.unidades_por_caixa || 1)} cx`
+            : `${i.quantidade} un`;
           return (
-            <div key={`${i.produto_id}-${i.eh_caixa}`} className="flex justify-between text-sm gap-2">
-              <span>
-                {i.eh_caixa ? `${i.quantidade / (p?.unidades_por_caixa || 1)} cx` : `${i.quantidade} un`} {p?.nome}
-              </span>
-              <button type="button" className="text-xs text-red-700" onClick={() => onTirar(i)}>
+            <div key={`${i.produto_id}-${i.eh_caixa}`} className="flex items-center gap-3">
+              {p?.foto_url ? (
+                <img
+                  src={p.foto_url}
+                  alt=""
+                  className="h-14 w-14 shrink-0 rounded-xl object-cover bg-neutral-100"
+                />
+              ) : (
+                <div className="h-14 w-14 shrink-0 rounded-xl bg-neutral-100 flex items-center justify-center text-[10px] text-neutral-400">
+                  Sem foto
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium line-clamp-2">{p?.nome}</p>
+                <p className="text-xs text-neutral-500">
+                  {qtd} · {formatBRL(i.quantidade * i.valor_unitario)}
+                </p>
+              </div>
+              <button type="button" className="text-xs text-red-700 shrink-0" onClick={() => onTirar(i)}>
                 Tirar
               </button>
             </div>

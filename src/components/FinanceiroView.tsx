@@ -1,20 +1,24 @@
 import React, { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useOficina } from '../context/OficinaContext';
 import { FORMA_LABEL } from '../types';
 import {
   agruparLancamentosPorDia,
   custoMateriais,
   deslocarMes,
+  detalharLancamentos,
   dreDoCaixa,
   formatDelta,
+  horaDoLancamento,
   lancamentosDoPeriodo,
   mesAtualLocal,
   rotuloMes,
   somarCaixa,
   somarPorForma,
   variacaoPct,
+  type GrupoDia,
   type Lancamento,
+  type LinhaVenda,
 } from '../utils/financeiro';
 import { formatBRL } from '../utils/formatters';
 
@@ -44,39 +48,100 @@ const Kpi: React.FC<{ label: string; valor: string; detalhe?: string }> = ({ lab
   </div>
 );
 
+const VendaItemLinha: React.FC<{ linha: LinhaVenda }> = ({ linha }) => (
+  <div className="flex items-baseline justify-between gap-2 pl-11">
+    <p className="min-w-0 text-xs text-neutral-800">
+      <span className="font-medium">{linha.descricao}</span>
+      <span className="text-neutral-400">{` ${linha.quantidade} un. × ${formatBRL(linha.valorUnitario)}`}</span>
+    </p>
+    <span className="shrink-0 text-xs tabular-nums text-neutral-600">{formatBRL(linha.valorTotal)}</span>
+  </div>
+);
+
 const VendaLinha: React.FC<{
   item: Lancamento;
   clienteNome?: string;
   onOpen?: () => void;
 }> = ({ item, clienteNome, onOpen }) => {
   const forma = item.forma && item.forma in FORMA_LABEL ? FORMA_LABEL[item.forma as keyof typeof FORMA_LABEL] : item.forma;
+  const origem =
+    item.tipo === 'os' ? `${item.rotulo}${clienteNome ? ` · ${clienteNome}` : ''}` : clienteNome ? `Balcão · ${clienteNome}` : 'Balcão';
   const corpo = (
-    <>
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-mono text-xs font-semibold">{item.rotulo}</span>
-        <span className="text-sm font-semibold tabular-nums">{formatBRL(item.valor)}</span>
+    <div className="space-y-1 py-2.5">
+      <div className="flex items-center gap-2">
+        <span className="w-10 shrink-0 text-xs tabular-nums text-neutral-500">{horaDoLancamento(item.data)}</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-neutral-500">{origem}</span>
+        {forma ? (
+          <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium text-neutral-600">
+            {forma}
+          </span>
+        ) : null}
+        <span className="shrink-0 text-sm font-semibold tabular-nums text-emerald-700">{formatBRL(item.valor)}</span>
       </div>
-      <div className="text-xs text-neutral-500">
-        {item.tipo === 'os' ? clienteNome || 'Cliente' : 'Balcão'}
-        {forma ? ` · ${forma}` : ''}
-      </div>
-    </>
+      {item.linhas.map((linha, i) => (
+        <VendaItemLinha key={`${item.id}-${i}`} linha={linha} />
+      ))}
+      {item.desconto > 0 ? (
+        <div className="flex items-baseline justify-between gap-2 pl-11 text-xs font-medium text-red-600">
+          <span>Desconto</span>
+          <span className="tabular-nums">- {formatBRL(item.desconto)}</span>
+        </div>
+      ) : null}
+    </div>
   );
-  if (!onOpen) {
-    return <div className="w-full text-left bg-white border border-neutral-200 rounded-sm px-2.5 py-2">{corpo}</div>;
-  }
+  const classe = 'w-full text-left border-t border-neutral-100 px-3';
+  if (!onOpen) return <div className={classe}>{corpo}</div>;
   return (
-    <button type="button" onClick={onOpen} className="w-full text-left bg-white border border-neutral-200 rounded-sm px-2.5 py-2">
+    <button type="button" onClick={onOpen} className={classe}>
       {corpo}
     </button>
   );
 };
+
+const GrupoDiaBloco: React.FC<{
+  grupo: GrupoDia;
+  margem: number;
+  aberto: boolean;
+  onToggle: () => void;
+  nomeCliente: (id: string) => string | undefined;
+  onOpenOS: (id: string) => void;
+}> = ({ grupo, margem, aberto, onToggle, nomeCliente, onOpenOS }) => (
+  <div className="border-t border-neutral-100">
+    <button type="button" onClick={onToggle} aria-expanded={aberto} className="flex w-full items-center gap-2 px-3 py-3 text-left">
+      <ChevronDown className={`h-4 w-4 shrink-0 text-neutral-400 transition-transform ${aberto ? '' : '-rotate-90'}`} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-neutral-900">{grupo.rotulo}</span>
+          <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-neutral-100 px-1.5 text-[10px] font-medium text-neutral-600">
+            {grupo.qtd}
+          </span>
+        </div>
+        <p className="text-[11px] text-neutral-400">
+          {`ticket ${formatBRL(grupo.ticket)} · margem ${margem.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`}
+        </p>
+      </div>
+      <span className="shrink-0 text-sm font-bold tabular-nums text-emerald-700">{formatBRL(grupo.total)}</span>
+    </button>
+    {aberto
+      ? grupo.itens.map((l) => (
+          <VendaLinha
+            key={l.id}
+            item={l}
+            clienteNome={l.clienteId ? nomeCliente(l.clienteId) : undefined}
+            onOpen={l.osId ? () => onOpenOS(l.osId as string) : undefined}
+          />
+        ))
+      : null}
+  </div>
+);
 
 export const FinanceiroView: React.FC<{ onOpenOS: (id: string) => void }> = ({ onOpenOS }) => {
   const { ordens, clientes, produtos, itens, vendas, vendaItens } = useOficina();
   const teto = mesAtualLocal();
   const [mes, setMes] = useState(teto);
   const [aba, setAba] = useState<AbaFin>('vendas');
+
+  const [diaAberto, setDiaAberto] = useState<string | null>(null);
 
   const pred = (iso: string) => iso.slice(0, 7) === mes;
   const mesPassado = deslocarMes(mes, -1);
@@ -100,8 +165,8 @@ export const FinanceiroView: React.FC<{ onOpenOS: (id: string) => void }> = ({ o
   const dreAnterior = dreDoCaixa(caixaAnterior.total, materiaisAnterior);
   const ticket = caixa.qtd > 0 ? caixa.total / caixa.qtd : 0;
   const lancamentos = useMemo(
-    () => lancamentosDoPeriodo(vendas, ordens, pred),
-    [vendas, ordens, mes]
+    () => detalharLancamentos(lancamentosDoPeriodo(vendas, ordens, pred), itens, vendaItens, produtos),
+    [vendas, ordens, itens, vendaItens, produtos, mes]
   );
   const vendasPorDia = useMemo(() => agruparLancamentosPorDia(lancamentos), [lancamentos]);
   const porForma = useMemo(() => somarPorForma(lancamentos), [lancamentos]);
@@ -167,29 +232,36 @@ export const FinanceiroView: React.FC<{ onOpenOS: (id: string) => void }> = ({ o
       </div>
 
       {aba === 'vendas' && (
-        <div className="space-y-3">
-          {vendasPorDia.length === 0 && (
-            <p className="text-sm text-neutral-400 text-center py-8">Nenhuma venda neste mês.</p>
-          )}
-          {vendasPorDia.map((grupo) => (
-            <div key={grupo.dia} className="space-y-1.5">
-              <div className="flex items-baseline justify-between gap-2 px-0.5">
-                <span className="text-xs font-semibold text-neutral-700">{grupo.rotulo}</span>
-                <span className="text-xs font-semibold tabular-nums text-neutral-500">{formatBRL(grupo.total)}</span>
-              </div>
-              {grupo.itens.map((l) => {
-                const os = l.osId ? ordens.find((o) => o.id === l.osId) : undefined;
-                return (
-                  <VendaLinha
-                    key={l.id}
-                    item={l}
-                    clienteNome={os ? nomeCliente(os.cliente_id) : undefined}
-                    onOpen={l.osId ? () => onOpenOS(l.osId as string) : undefined}
-                  />
-                );
-              })}
+        <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white">
+          <div className="px-3 pt-3 pb-2">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-neutral-900">Vendas por dia</h3>
+              <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium text-neutral-500">
+                {caixa.qtd} venda{caixa.qtd === 1 ? '' : 's'}
+              </span>
             </div>
-          ))}
+            <p className="text-xs text-neutral-400">Detalhe das vendas agrupadas por data</p>
+          </div>
+          {vendasPorDia.length === 0 && (
+            <p className="px-3 py-8 text-center text-sm text-neutral-400">Nenhuma venda neste mês.</p>
+          )}
+          {vendasPorDia.map((grupo, i) => {
+            const osIds = grupo.itens.filter((l) => l.tipo === 'os').map((l) => l.id);
+            const vendaIds = grupo.itens.filter((l) => l.tipo === 'balcao').map((l) => l.id);
+            const margem = dreDoCaixa(grupo.total, custoMateriais(osIds, vendaIds, itens, vendaItens, produtos)).margem;
+            const aberto = diaAberto === null ? i === 0 : diaAberto === grupo.dia;
+            return (
+              <GrupoDiaBloco
+                key={grupo.dia}
+                grupo={grupo}
+                margem={margem}
+                aberto={aberto}
+                onToggle={() => setDiaAberto(aberto ? '' : grupo.dia)}
+                nomeCliente={nomeCliente}
+                onOpenOS={onOpenOS}
+              />
+            );
+          })}
         </div>
       )}
 

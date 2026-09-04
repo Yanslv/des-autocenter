@@ -29,6 +29,13 @@ export type CaixaResumo = {
   qtdBalcao: number;
 };
 
+export type LinhaVenda = {
+  descricao: string;
+  quantidade: number;
+  valorUnitario: number;
+  valorTotal: number;
+};
+
 export type Lancamento = {
   id: string;
   tipo: 'os' | 'balcao';
@@ -37,6 +44,9 @@ export type Lancamento = {
   rotulo: string;
   forma: string | null;
   osId?: string;
+  clienteId: string | null;
+  linhas: LinhaVenda[];
+  desconto: number;
 };
 
 export function mesmoDia(iso: string, ymd: string) {
@@ -154,15 +164,21 @@ export function lancamentosDoPeriodo(
   ordens: OrdemCaixa[],
   pred: (iso: string) => boolean
 ): Lancamento[] {
-  const os = osDoPeriodo(ordens, pred).map((o) => ({
-    id: o.id,
-    tipo: 'os' as const,
-    data: o.data_entrega as string,
-    valor: valorOs(o),
-    rotulo: `OS-${o.numero_os}`,
-    forma: o.forma_pagamento,
-    osId: o.id,
-  }));
+  const os = osDoPeriodo(ordens, pred).map((o) => {
+    const valor = valorOs(o);
+    return {
+      id: o.id,
+      tipo: 'os' as const,
+      data: o.data_entrega as string,
+      valor,
+      rotulo: `OS-${o.numero_os}`,
+      forma: o.forma_pagamento,
+      osId: o.id,
+      clienteId: o.cliente_id,
+      linhas: [] as LinhaVenda[],
+      desconto: Math.max(0, Number(o.valor_total) - valor),
+    };
+  });
   const balcao = vendasDoPeriodo(vendas, pred).map((v) => ({
     id: v.id,
     tipo: 'balcao' as const,
@@ -170,6 +186,9 @@ export function lancamentosDoPeriodo(
     valor: Number(v.valor_total),
     rotulo: `Balcão #${v.numero_venda}`,
     forma: v.forma_pagamento,
+    clienteId: v.cliente_id,
+    linhas: [] as LinhaVenda[],
+    desconto: 0,
   }));
   return [...os, ...balcao].sort((a, b) => b.data.localeCompare(a.data));
 }
@@ -186,13 +205,77 @@ export function somarPorForma(lancamentos: Lancamento[]) {
 }
 
 const DIAS_SEMANA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'] as const;
+const DIAS_ABREV = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'] as const;
 
 export type GrupoDia = {
   dia: string;
   rotulo: string;
   total: number;
+  qtd: number;
+  ticket: number;
   itens: Lancamento[];
 };
+
+export function horaDoLancamento(iso: string) {
+  return new Date(iso).toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    hourCycle: 'h23',
+    timeZone: 'America/Sao_Paulo',
+  });
+}
+
+export function ymdDoLancamento(iso: string) {
+  return new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+}
+
+export function detalharLancamentos(
+  lancamentos: Lancamento[],
+  osItens: {
+    os_id: string;
+    descricao: string;
+    quantidade: number;
+    valor_unitario: number;
+    valor_total: number;
+  }[],
+  vendaItens: {
+    venda_id: string;
+    produto_id: string;
+    quantidade: number;
+    valor_unitario: number;
+    valor_total: number;
+  }[],
+  produtos: { id: string; nome: string }[]
+): Lancamento[] {
+  const nomes = new Map(produtos.map((p) => [p.id, p.nome]));
+  return lancamentos.map((l) => {
+    if (l.tipo === 'os') {
+      return {
+        ...l,
+        linhas: osItens
+          .filter((i) => i.os_id === l.id)
+          .map((i) => ({
+            descricao: i.descricao,
+            quantidade: Number(i.quantidade),
+            valorUnitario: Number(i.valor_unitario),
+            valorTotal: Number(i.valor_total),
+          })),
+      };
+    }
+    return {
+      ...l,
+      linhas: vendaItens
+        .filter((i) => i.venda_id === l.id)
+        .map((i) => ({
+          descricao: nomes.get(i.produto_id) || 'Produto',
+          quantidade: Number(i.quantidade),
+          valorUnitario: Number(i.valor_unitario),
+          valorTotal: Number(i.valor_total),
+        })),
+    };
+  });
+}
 
 export function nomeDiaSemana(ymd: string) {
   return DIAS_SEMANA[new Date(`${ymd}T12:00:00`).getDay()];
@@ -200,24 +283,28 @@ export function nomeDiaSemana(ymd: string) {
 
 export function rotuloDiaGrupo(ymd: string) {
   const [, mes, dia] = ymd.split('-');
-  const nome = nomeDiaSemana(ymd);
-  return `${nome.charAt(0).toUpperCase()}${nome.slice(1)} · ${dia}/${mes}`;
+  return `${DIAS_ABREV[new Date(`${ymd}T12:00:00`).getDay()]} ${dia}/${mes}`;
 }
 
 export function agruparLancamentosPorDia(lancamentos: Lancamento[]): GrupoDia[] {
   const grupos = new Map<string, Lancamento[]>();
   for (const l of lancamentos) {
-    const dia = l.data.slice(0, 10);
+    const dia = ymdDoLancamento(l.data);
     const lista = grupos.get(dia);
     if (lista) lista.push(l);
     else grupos.set(dia, [l]);
   }
   return [...grupos.entries()]
     .sort((a, b) => b[0].localeCompare(a[0]))
-    .map(([dia, itens]) => ({
-      dia,
-      rotulo: rotuloDiaGrupo(dia),
-      total: itens.reduce((s, i) => s + i.valor, 0),
-      itens,
-    }));
+    .map(([dia, itens]) => {
+      const total = itens.reduce((s, i) => s + i.valor, 0);
+      return {
+        dia,
+        rotulo: rotuloDiaGrupo(dia),
+        total,
+        qtd: itens.length,
+        ticket: itens.length > 0 ? total / itens.length : 0,
+        itens,
+      };
+    });
 }

@@ -3,7 +3,9 @@ import {
   agruparLancamentosPorDia,
   custoMateriais,
   deslocarMes,
+  detalharLancamentos,
   dreDoCaixa,
+  horaDoLancamento,
   lancamentosDoPeriodo,
   nomeDiaSemana,
   rotuloDiaGrupo,
@@ -100,7 +102,8 @@ assert.equal(nomeDiaSemana('2026-09-02'), 'quarta');
 assert.equal(nomeDiaSemana('2026-09-03'), 'quinta');
 assert.equal(nomeDiaSemana('2026-09-04'), 'sexta');
 assert.equal(nomeDiaSemana('2026-09-05'), 'sábado');
-assert.equal(rotuloDiaGrupo('2026-09-07'), 'Segunda · 07/09');
+assert.equal(rotuloDiaGrupo('2026-09-07'), 'Seg 07/09');
+assert.equal(horaDoLancamento('2026-09-04T20:16:00Z'), '17:16');
 
 const vendasMesmoDia = [
   ...vendas,
@@ -116,12 +119,67 @@ const vendasMesmoDia = [
 const grupos = agruparLancamentosPorDia(lancamentosDoPeriodo(vendasMesmoDia, ordens, predMes));
 assert.equal(grupos.length, 2);
 assert.equal(grupos[0].dia, '2026-09-03');
-assert.equal(grupos[0].rotulo, 'Quinta · 03/09');
+assert.equal(grupos[0].rotulo, 'Qui 03/09');
 assert.equal(grupos[0].total, 100);
+assert.equal(grupos[0].qtd, 2);
+assert.equal(grupos[0].ticket, 50);
 assert.equal(grupos[0].itens.length, 2);
 assert.equal(grupos[1].dia, '2026-09-02');
-assert.equal(grupos[1].rotulo, 'Quarta · 02/09');
+assert.equal(grupos[1].rotulo, 'Qua 02/09');
 assert.equal(grupos[1].total, 400);
 assert.equal(grupos[1].itens.length, 1);
+
+const noiteSp = agruparLancamentosPorDia(
+  lancamentosDoPeriodo(
+    [
+      {
+        id: 'v4',
+        data_venda: '2026-09-05T02:30:00Z',
+        valor_total: 10,
+        numero_venda: 9,
+        cliente_id: null,
+        forma_pagamento: 'PIX',
+      },
+    ],
+    [],
+    () => true
+  )
+);
+assert.equal(noiteSp[0].dia, '2026-09-04');
+assert.equal(horaDoLancamento('2026-09-05T02:30:00Z'), '23:30');
+
+const detalhados = detalharLancamentos(
+  lancamentosDoPeriodo(vendas, ordens, predMes),
+  [
+    {
+      os_id: 'os1',
+      descricao: 'Troca de óleo',
+      quantidade: 1,
+      valor_unitario: 400,
+      valor_total: 400,
+    },
+  ],
+  [
+    {
+      venda_id: 'v1',
+      produto_id: 'p2',
+      quantidade: 2,
+      valor_unitario: 40,
+      valor_total: 80,
+    },
+  ],
+  [{ id: 'p2', nome: 'Filtro de ar' }]
+);
+const balcao = detalhados.find((l) => l.tipo === 'balcao');
+assert.ok(balcao);
+assert.deepEqual(balcao.linhas, [
+  { descricao: 'Filtro de ar', quantidade: 2, valorUnitario: 40, valorTotal: 80 },
+]);
+const os = detalhados.find((l) => l.tipo === 'os');
+assert.ok(os);
+assert.deepEqual(os.linhas, [
+  { descricao: 'Troca de óleo', quantidade: 1, valorUnitario: 400, valorTotal: 400 },
+]);
+assert.equal(os.desconto, 50);
 
 console.log('financeiro.test.ts ok');

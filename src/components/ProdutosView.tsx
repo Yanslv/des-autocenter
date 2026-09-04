@@ -43,12 +43,9 @@ function pararFaixas(stream: MediaStream | null) {
 }
 
 function mensagemErroCamera(err: unknown): string {
-  if (!window.isSecureContext) {
-    return 'A câmera só funciona em HTTPS. Use Arquivos ou abra o sistema pelo endereço seguro.';
-  }
   const nome = err instanceof DOMException ? err.name : '';
   if (nome === 'NotAllowedError' || nome === 'PermissionDeniedError') {
-    return 'Permissão da câmera negada. Ative o acesso nas configurações do navegador.';
+    return 'Permissão da câmera negada. Ative o acesso nas configurações do aparelho.';
   }
   if (nome === 'NotFoundError' || nome === 'OverconstrainedError') {
     return 'Nenhuma câmera encontrada neste aparelho.';
@@ -56,48 +53,33 @@ function mensagemErroCamera(err: unknown): string {
   return 'Não foi possível abrir a câmera.';
 }
 
+async function pedirStreamCamera(): Promise<MediaStream> {
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: 'environment' } },
+    });
+  } catch {
+    return await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+  }
+}
+
 const CameraCaptura: React.FC<{
+  stream: MediaStream;
   onFoto: (file: File) => void;
   onFechar: () => void;
-  onErro: (msg: string) => void;
-}> = ({ onFoto, onFechar, onErro }) => {
+}> = ({ stream, onFoto, onFechar }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
-    let cancelado = false;
-    const abrir = async () => {
-      try {
-        if (!navigator.mediaDevices?.getUserMedia) {
-          throw new DOMException('Unsupported', 'NotFoundError');
-        }
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: { facingMode: { ideal: 'environment' } },
-        });
-        if (cancelado) {
-          pararFaixas(stream);
-          return;
-        }
-        streamRef.current = stream;
-        const video = videoRef.current;
-        if (!video) return;
-        video.srcObject = stream;
-        await video.play();
-      } catch (err) {
-        if (cancelado) return;
-        onErro(mensagemErroCamera(err));
-        onFechar();
-      }
-    };
-    void abrir();
+    const video = videoRef.current;
+    if (!video) return;
+    video.srcObject = stream;
+    void video.play().catch(() => undefined);
     return () => {
-      cancelado = true;
-      pararFaixas(streamRef.current);
-      streamRef.current = null;
-      if (videoRef.current) videoRef.current.srcObject = null;
+      video.srcObject = null;
     };
-  }, []);
+  }, [stream]);
 
   const capturar = () => {
     const video = videoRef.current;
@@ -154,8 +136,10 @@ export const ProdutosView: React.FC<{
   const [custoMov, setCustoMov] = useState('');
   const [motivoMov, setMotivoMov] = useState<MotivoSaida>('avaria');
   const [remover, setRemover] = useState<Produto | null>(null);
-  const [cameraAberta, setCameraAberta] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const arquivoRef = useRef<HTMLInputElement>(null);
+  const cameraAoVivo =
+    window.isSecureContext && Boolean(navigator.mediaDevices?.getUserMedia);
 
   const lista = useMemo(() => {
     const t = busca.trim().toLowerCase();
@@ -228,7 +212,27 @@ export const ProdutosView: React.FC<{
     }
   };
 
+  const fecharCamera = () => {
+    setCameraStream((atual) => {
+      pararFaixas(atual);
+      return null;
+    });
+  };
+
+  const abrirCamera = () => {
+    setErro('');
+    void (async () => {
+      try {
+        const stream = await pedirStreamCamera();
+        setCameraStream(stream);
+      } catch (err) {
+        setErro(mensagemErroCamera(err));
+      }
+    })();
+  };
+
   const fecharForm = () => {
+    fecharCamera();
     setFormAberto(false);
     setForm(formVazio);
     setPreview((atual) => {
@@ -339,17 +343,28 @@ export const ProdutosView: React.FC<{
                   onChange={aplicarArquivo}
                 />
                 <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    className="flex items-center justify-center gap-2 rounded-xl border border-neutral-200 py-3 text-sm font-medium"
-                    onClick={() => {
-                      setErro('');
-                      setCameraAberta(true);
-                    }}
-                  >
-                    <Camera className="h-4 w-4" />
-                    Tirar foto
-                  </button>
+                  {cameraAoVivo ? (
+                    <button
+                      type="button"
+                      className="flex items-center justify-center gap-2 rounded-xl border border-neutral-200 py-3 text-sm font-medium"
+                      onClick={abrirCamera}
+                    >
+                      <Camera className="h-4 w-4" />
+                      Tirar foto
+                    </button>
+                  ) : (
+                    <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-neutral-200 py-3 text-sm font-medium">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="sr-only"
+                        onChange={aplicarArquivo}
+                      />
+                      <Camera className="h-4 w-4" />
+                      Tirar foto
+                    </label>
+                  )}
                   <button
                     type="button"
                     className="flex items-center justify-center gap-2 rounded-xl border border-neutral-200 py-3 text-sm font-medium"
@@ -359,6 +374,7 @@ export const ProdutosView: React.FC<{
                     Arquivos
                   </button>
                 </div>
+                {erro && <p className="text-sm text-red-700">{erro}</p>}
                 {preview && (
                   <img src={preview} alt="" className="h-44 w-full rounded-xl bg-neutral-100 object-cover" />
                 )}
@@ -519,12 +535,8 @@ export const ProdutosView: React.FC<{
         />
       )}
 
-      {cameraAberta && (
-        <CameraCaptura
-          onFoto={usarFoto}
-          onFechar={() => setCameraAberta(false)}
-          onErro={setErro}
-        />
+      {cameraStream && (
+        <CameraCaptura stream={cameraStream} onFoto={usarFoto} onFechar={fecharCamera} />
       )}
 
       {remover && (
