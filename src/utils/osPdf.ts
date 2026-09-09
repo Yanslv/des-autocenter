@@ -1,21 +1,38 @@
-import { jsPDF } from 'jspdf';
 import { STATUS_LABEL, type StatusOS } from '../types';
-import { formatDateBR } from './dateUtils';
+import { montarOrcamentoPdfModelo, type OrcamentoPdfModelo } from './orcamentoPdf';
 
-type PdfInput = {
+export type OsPdfInput = {
   oficinaNome: string;
+  oficinaSegmento?: string | null;
   oficinaWhatsapp: string;
+  oficinaEmail?: string | null;
   oficinaCnpj?: string | null;
   oficinaEndereco?: string | null;
   numeroOs: number;
   status: StatusOS;
   dataAbertura: string;
   previsao?: string | null;
+  clienteTipo?: string | null;
   clienteNome: string;
+  clienteNomeFantasia?: string | null;
+  clienteDocumento?: string | null;
+  clienteResponsavel?: string | null;
+  clienteCpfResponsavel?: string | null;
   clienteTelefone?: string | null;
+  clienteEmail?: string | null;
+  clienteEndereco?: string | null;
+  clienteNumero?: string | null;
+  clienteComplemento?: string | null;
+  clienteBairro?: string | null;
+  clienteCidade?: string | null;
+  clienteUf?: string | null;
+  clienteCep?: string | null;
   placa?: string | null;
   modelo?: string | null;
   marca?: string | null;
+  versao?: string | null;
+  ano?: number | null;
+  anoModelo?: number | null;
   cor?: string | null;
   km?: number | null;
   problema: string;
@@ -28,139 +45,52 @@ type PdfInput = {
   }>;
 };
 
-export function gerarOsClientePdf(data: PdfInput) {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const margin = 14;
-  const width = 182;
-  let y = 16;
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
-  doc.text(data.oficinaNome || 'Oficina', margin, y);
-  y += 6;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  const contato = [data.oficinaWhatsapp && `WhatsApp ${data.oficinaWhatsapp}`, data.oficinaCnpj]
-    .filter(Boolean)
-    .join('  •  ');
-  if (contato) {
-    doc.text(contato, margin, y);
-    y += 5;
-  }
-  if (data.oficinaEndereco) {
-    doc.text(data.oficinaEndereco, margin, y);
-    y += 5;
-  }
-
-  y += 2;
-  doc.setLineWidth(0.4);
-  doc.line(margin, y, margin + width, y);
-  y += 8;
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(13);
-  doc.text(`ORDEM DE SERVIÇO OS-${data.numeroOs}`, margin, y);
-  y += 6;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.text(`Aberta em ${formatDateBR(data.dataAbertura)}   •   ${STATUS_LABEL[data.status]}`, margin, y);
-  if (data.previsao) {
-    y += 5;
-    doc.text(`Previsão de entrega: ${formatDateBR(data.previsao)}`, margin, y);
-  }
-  y += 8;
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('Cliente', margin, y);
-  y += 5;
-  doc.setFont('helvetica', 'normal');
-  doc.text(data.clienteNome, margin, y);
-  y += 5;
-  doc.text(data.clienteTelefone ? `Telefone: ${data.clienteTelefone}` : 'Telefone: não informado', margin, y);
-  y += 8;
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('Veículo', margin, y);
-  y += 5;
-  doc.setFont('helvetica', 'normal');
-  const carro = [
-    data.placa || 'sem placa',
-    [data.marca, data.modelo].filter(Boolean).join(' '),
-    data.cor && `cor ${data.cor}`,
-    data.km != null && `${String(data.km).replace(/\B(?=(\d{3})+(?!\d))/g, '.')} km`,
-  ]
-    .filter(Boolean)
-    .join('  •  ');
-  doc.text(carro || '—', margin, y);
-  y += 8;
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('Serviço / queixa', margin, y);
-  y += 5;
-  doc.setFont('helvetica', 'normal');
-  const queixa = doc.splitTextToSize(data.problema || '—', width);
-  doc.text(queixa, margin, y);
-  y += queixa.length * 4.5 + 4;
-
-  doc.setFont('helvetica', 'bold');
-  doc.text('Peças e mão de obra', margin, y);
-  y += 6;
-
-  const pecas = data.itens.filter((i) => i.tipo === 'produto');
-  const servicos = data.itens.filter((i) => i.tipo === 'servico');
-  const bloco = (titulo: string, lista: typeof data.itens) => {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.text(titulo, margin, y);
-    y += 5;
-    doc.setFont('helvetica', 'normal');
-    if (lista.length === 0) {
-      doc.text('—', margin, y);
-      y += 6;
-      return;
-    }
-    lista.forEach((it) => {
-      if (y > 270) {
-        doc.addPage();
-        y = 16;
-      }
-      const linha = `${it.quantidade}x ${it.descricao}`;
-      doc.text(linha.substring(0, 70), margin, y);
-      doc.text(`R$ ${Number(it.valor_total).toFixed(2)}`, margin + width, y, { align: 'right' });
-      y += 5;
-    });
-    y += 2;
-  };
-
-  bloco('Peças', pecas);
-  bloco('Mão de obra', servicos);
-
-  const totalPecas = pecas.reduce((s, i) => s + Number(i.valor_total), 0);
-  const totalServ = servicos.reduce((s, i) => s + Number(i.valor_total), 0);
-  const total = totalPecas + totalServ;
-
-  y += 2;
-  doc.line(margin, y, margin + width, y);
-  y += 7;
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Peças: R$ ${totalPecas.toFixed(2)}`, margin, y);
-  y += 5;
-  doc.text(`Mão de obra: R$ ${totalServ.toFixed(2)}`, margin, y);
-  y += 7;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(12);
-  doc.text(`TOTAL: R$ ${total.toFixed(2)}`, margin, y);
-  y += 12;
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text('De acordo: autorizo a execução dos serviços e peças acima.', margin, y);
-  y += 14;
-  doc.line(margin, y, margin + 80, y);
-  doc.text('Cliente  •  data ____/____/________', margin, y + 5);
-
-  const filename = `OS-${data.numeroOs}.pdf`;
-  return new File([doc.output('blob')], filename, { type: 'application/pdf' });
+export function montarOsPdfModelo(data: OsPdfInput): OrcamentoPdfModelo {
+  return montarOrcamentoPdfModelo({
+    oficinaNome: data.oficinaNome,
+    oficinaSegmento: data.oficinaSegmento,
+    oficinaWhatsapp: data.oficinaWhatsapp,
+    oficinaEmail: data.oficinaEmail,
+    oficinaEndereco: data.oficinaEndereco,
+    oficinaCnpj: data.oficinaCnpj,
+    numero: data.numeroOs,
+    dataEmissao: data.dataAbertura,
+    validadeDias: 0,
+    validadeTexto: STATUS_LABEL[data.status],
+    tituloDocumento: 'Ordem de Serviço',
+    rotuloTotal: 'Total da ordem de serviço',
+    rotuloAprovacao: 'Aprovação da ordem de serviço',
+    textoAprovacao:
+      'Declaro estar de acordo com os serviços, peças, valores e condições descritos nesta ordem de serviço.',
+    rotuloCondicao3: 'Status',
+    clienteTipo: data.clienteTipo,
+    clienteNome: data.clienteNome,
+    clienteNomeFantasia: data.clienteNomeFantasia,
+    clienteDocumento: data.clienteDocumento,
+    clienteResponsavel: data.clienteResponsavel,
+    clienteCpfResponsavel: data.clienteCpfResponsavel,
+    clienteTelefone: data.clienteTelefone,
+    clienteEmail: data.clienteEmail,
+    clienteEndereco: data.clienteEndereco,
+    clienteNumero: data.clienteNumero,
+    clienteComplemento: data.clienteComplemento,
+    clienteBairro: data.clienteBairro,
+    clienteCidade: data.clienteCidade,
+    clienteUf: data.clienteUf,
+    clienteCep: data.clienteCep,
+    marca: data.marca,
+    modelo: data.modelo,
+    versao: data.versao,
+    ano: data.ano,
+    anoModelo: data.anoModelo,
+    placa: data.placa,
+    cor: data.cor,
+    km: data.km,
+    itens: data.itens,
+    desconto: 0,
+    previsao: data.previsao,
+    observacao: data.problema,
+  });
 }
 
 export function mensagemWhatsAppOs(input: {

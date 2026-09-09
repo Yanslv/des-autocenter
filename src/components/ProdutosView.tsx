@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Camera, Images, Pencil, Search, Trash2 } from 'lucide-react';
+import { Camera, Images, Pencil, Save, Search, Trash2 } from 'lucide-react';
 import type { Database } from '../types/database';
 import type { MotivoSaida } from '../types';
 import { useOficina, type ProdutoInput } from '../context/OficinaContext';
+import { AcaoFooter, BarraFooter } from './AcaoFooter';
 import { Campo, inputClass } from './Campo';
 import {
   formatBRL,
@@ -500,15 +501,15 @@ export const ProdutosView: React.FC<{
               </label>
               {erro && <p className="text-sm text-red-700">{erro}</p>}
             </div>
-            <div className="border-t border-neutral-200 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-              <button
+            <BarraFooter fixo={false}>
+              <AcaoFooter
                 type="submit"
                 disabled={busy}
-                className="w-full py-3 rounded-xl bg-[#cd3f00] text-white font-semibold disabled:opacity-60"
-              >
-                {busy ? 'Salvando…' : form.id ? 'Salvar produto' : 'Cadastrar produto'}
-              </button>
-            </div>
+                label={busy ? 'Salvando' : form.id ? 'Salvar' : 'Cadastrar'}
+                icon={<Save className="w-5 h-5" />}
+                tom="destaque"
+              />
+            </BarraFooter>
           </form>
         </div>
       )}

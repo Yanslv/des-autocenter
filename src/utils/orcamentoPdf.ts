@@ -6,6 +6,7 @@ import {
   formatarNumeroOrcamento,
   montarEnderecoCliente,
   resumoVeiculoOrcamento,
+  TEXTO_APROVACAO,
 } from './orcamento';
 
 export type ItemOrcamentoPdf = {
@@ -57,6 +58,12 @@ export type OrcamentoPdfInput = {
   observacao?: string | null;
   aprovadoNome?: string | null;
   aprovadoEm?: string | null;
+  tituloDocumento?: string;
+  rotuloTotal?: string;
+  rotuloAprovacao?: string;
+  textoAprovacao?: string;
+  rotuloCondicao3?: string;
+  validadeTexto?: string;
 };
 
 export type LinhaServicoPdf = {
@@ -84,6 +91,11 @@ export type OrcamentoPdfModelo = {
   numero: string;
   data: string;
   validadeTexto: string;
+  tituloDocumento: string;
+  rotuloTotal: string;
+  rotuloAprovacao: string;
+  textoAprovacao: string;
+  rotuloCondicao3: string;
   ehPj: boolean;
   clienteNome: string;
   clienteDocumento: string;
@@ -138,7 +150,12 @@ export function montarOrcamentoPdfModelo(data: OrcamentoPdfInput): OrcamentoPdfM
     oficinaCnpj: data.oficinaCnpj || '',
     numero: formatarNumeroOrcamento(data.numero),
     data: formatDateBR(data.dataEmissao),
-    validadeTexto: `${data.validadeDias} dias (até ${validadeFim})`,
+    validadeTexto: data.validadeTexto || `${data.validadeDias} dias (até ${validadeFim})`,
+    tituloDocumento: data.tituloDocumento || 'Orçamento',
+    rotuloTotal: data.rotuloTotal || 'Total do orçamento',
+    rotuloAprovacao: data.rotuloAprovacao || 'Aprovação do orçamento',
+    textoAprovacao: data.textoAprovacao || TEXTO_APROVACAO,
+    rotuloCondicao3: data.rotuloCondicao3 || 'Validade do orçamento',
     ehPj: data.clienteTipo === 'pj',
     clienteNome: data.clienteNome || '',
     clienteDocumento: data.clienteDocumento || '',

@@ -45,6 +45,8 @@ const modelo = montarOrcamentoPdfModelo({
 });
 
 assert.equal(modelo.numero, '000123');
+assert.equal(modelo.tituloDocumento, 'Orçamento');
+assert.equal(modelo.rotuloTotal, 'Total do orçamento');
 assert.equal(modelo.validadeTexto, '15 dias (até 24/09/2026)');
 assert.equal(modelo.ehPj, false);
 assert.equal(modelo.clienteEndereco, 'Rua das Flores, 120, Sala 2 — Centro, Curitiba/PR — CEP 80000-000');

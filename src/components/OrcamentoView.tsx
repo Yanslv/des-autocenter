@@ -22,6 +22,7 @@ import { baixarOsPdf, compartilharArquivo } from '../utils/osPdf';
 import { formatBRL, maskKmInput, maskPlaca, parseKm, unidadesDoPedido } from '../utils/formatters';
 import { formatDateBR } from '../utils/dateUtils';
 import { novoId } from '../utils/id';
+import { AcaoFooter, BarraFooter } from './AcaoFooter';
 import { Campo, inputClass, inputCompactClass } from './Campo';
 import { CorPicker } from './CorPicker';
 import { OrcamentoItensForm, type ItemOrcamentoForm } from './OrcamentoItensForm';
@@ -731,8 +732,7 @@ export const OrcamentoView: React.FC<{
 
       {erro && <p className="text-sm text-red-700">{erro}</p>}
 
-      <div className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-neutral-200 px-1 pt-1 pb-[calc(env(safe-area-inset-bottom)+6px)]">
-        <div className="flex items-stretch max-w-lg mx-auto">
+      <BarraFooter>
           <AcaoFooter
             label="Baixar"
             icon={<Download className="w-5 h-5" />}
@@ -807,36 +807,10 @@ export const OrcamentoView: React.FC<{
               onClick={() => onAbriuOS(salvo.os_id as string)}
             />
           ) : null}
-        </div>
-      </div>
+      </BarraFooter>
     </form>
   );
 };
-
-const TOM_ACAO = {
-  neutro: 'text-neutral-600',
-  destaque: 'text-[#cd3f00]',
-  perigo: 'text-red-600',
-} as const;
-
-const AcaoFooter: React.FC<{
-  label: string;
-  icon: React.ReactNode;
-  onClick?: () => void;
-  disabled?: boolean;
-  type?: 'button' | 'submit';
-  tom?: keyof typeof TOM_ACAO;
-}> = ({ label, icon, onClick, disabled, type = 'button', tom = 'neutro' }) => (
-  <button
-    type={type}
-    disabled={disabled}
-    onClick={onClick}
-    className={`flex flex-1 flex-col items-center justify-center gap-0.5 min-w-0 py-1.5 disabled:opacity-40 ${TOM_ACAO[tom]}`}
-  >
-    {icon}
-    <span className="text-[10px] font-medium leading-none truncate w-full text-center">{label}</span>
-  </button>
-);
 
 const LinhaValor: React.FC<{ rotulo: string; valor: number }> = ({ rotulo, valor }) => (
   <div className="flex justify-between text-sm">

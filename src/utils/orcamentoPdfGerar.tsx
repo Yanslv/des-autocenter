@@ -4,7 +4,8 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import logoDs from '../assets/d&s_logo.png';
 import { OrcamentoPdfDocumento, orcamentoPdfCss } from '../components/OrcamentoPdfDocumento';
-import { areaUtilPdfMm, alturaUtilPdfPx, definirCortesPdf, fatiasCanvas, montarOrcamentoPdfModelo, type OrcamentoPdfInput } from './orcamentoPdf';
+import { areaUtilPdfMm, alturaUtilPdfPx, definirCortesPdf, fatiasCanvas, montarOrcamentoPdfModelo, type OrcamentoPdfInput, type OrcamentoPdfModelo } from './orcamentoPdf';
+import { montarOsPdfModelo, type OsPdfInput } from './osPdf';
 
 function esperarImagens(root: HTMLElement) {
   return Promise.all(
@@ -68,8 +69,7 @@ function recortarCanvas(canvas: HTMLCanvasElement, sy: number, sh: number) {
   return fatia;
 }
 
-export async function gerarOrcamentoPdf(data: OrcamentoPdfInput): Promise<File> {
-  const modelo = montarOrcamentoPdfModelo(data);
+async function gerarPdfDoModelo(modelo: OrcamentoPdfModelo, filename: string): Promise<File> {
   const host = document.createElement('div');
   host.style.position = 'fixed';
   host.style.left = '0';
@@ -88,7 +88,7 @@ export async function gerarOrcamentoPdf(data: OrcamentoPdfInput): Promise<File> 
     });
     await esperarImagens(host);
     const folha = host.querySelector('.orcamento-pdf');
-    if (!(folha instanceof HTMLElement)) throw new Error('Não foi possível montar o orçamento');
+    if (!(folha instanceof HTMLElement)) throw new Error('Não foi possível montar o documento');
     const canvas = await html2canvas(folha, {
       scale: 2,
       useCORS: true,
@@ -111,10 +111,20 @@ export async function gerarOrcamentoPdf(data: OrcamentoPdfInput): Promise<File> 
       if (idx > 0) pdf.addPage();
       pdf.addImage(fatia.toDataURL('image/jpeg', 0.95), 'JPEG', area.x, area.y, area.w, hMm);
     });
-    return new File([pdf.output('blob')], `ORCAMENTO-${modelo.numero}.pdf`, { type: 'application/pdf' });
+    return new File([pdf.output('blob')], filename, { type: 'application/pdf' });
   } finally {
     root.unmount();
     host.remove();
     style.remove();
   }
+}
+
+export async function gerarOrcamentoPdf(data: OrcamentoPdfInput): Promise<File> {
+  const modelo = montarOrcamentoPdfModelo(data);
+  return gerarPdfDoModelo(modelo, `ORCAMENTO-${modelo.numero}.pdf`);
+}
+
+export async function gerarOsClientePdf(data: OsPdfInput): Promise<File> {
+  const modelo = montarOsPdfModelo(data);
+  return gerarPdfDoModelo(modelo, `OS-${modelo.numero}.pdf`);
 }

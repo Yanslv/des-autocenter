@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
+import { Save } from 'lucide-react';
 import { useOficina } from '../context/OficinaContext';
+import { AcaoFooter, BarraFooter } from './AcaoFooter';
 import { Campo, inputClass } from './Campo';
 
 export const OficinaConfigView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
@@ -15,7 +17,7 @@ export const OficinaConfigView: React.FC<{ onBack: () => void }> = ({ onBack }) 
 
   return (
     <form
-      className="space-y-3"
+      className="space-y-3 pb-20"
       onSubmit={async (e) => {
         e.preventDefault();
         setErro('');
@@ -66,9 +68,9 @@ export const OficinaConfigView: React.FC<{ onBack: () => void }> = ({ onBack }) 
         <input className={inputClass} value={endereco} onChange={(e) => setEndereco(e.target.value)} />
       </Campo>
       {erro && <p className="text-sm text-red-700">{erro}</p>}
-      <button type="submit" className="w-full py-3 rounded-xl bg-[#cd3f00] text-white font-semibold">
-        Salvar
-      </button>
+      <BarraFooter>
+        <AcaoFooter type="submit" label="Salvar" icon={<Save className="w-5 h-5" />} tom="destaque" />
+      </BarraFooter>
     </form>
   );
 };

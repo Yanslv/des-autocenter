@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 import type { Database } from '../types/database';
 import { useOficina } from '../context/OficinaContext';
 import { FORMA_LABEL, type FormaPagamento } from '../types';
+import { AcaoFooter, BarraFooter } from './AcaoFooter';
 import { Campo, inputClass } from './Campo';
 import { formatBRL, rotuloEstoque, saldoLivre, unidadesDoPedido } from '../utils/formatters';
 
@@ -334,16 +335,17 @@ const CarrinhoSidebar: React.FC<{
           <textarea className={`${inputClass} min-h-20`} value={obs} onChange={(e) => onObs(e.target.value)} />
         </Campo>
       </div>
-      <div className="space-y-2 border-t border-neutral-200 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        {erro && <p className="text-sm text-red-700">{erro}</p>}
-        <button
-          type="button"
-          disabled={busy}
-          className="w-full py-3 rounded-xl bg-[#cd3f00] text-white font-semibold disabled:opacity-60"
-          onClick={onConfirmar}
-        >
-          {busy ? 'Confirmando…' : 'Confirmar venda'}
-        </button>
+      <div className="space-y-2">
+        {erro && <p className="text-sm text-red-700 px-4">{erro}</p>}
+        <BarraFooter fixo={false}>
+          <AcaoFooter
+            label={busy ? 'Confirmando' : 'Confirmar'}
+            icon={<Check className="w-5 h-5" />}
+            tom="destaque"
+            disabled={busy}
+            onClick={onConfirmar}
+          />
+        </BarraFooter>
       </div>
     </aside>
   </div>

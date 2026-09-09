@@ -1,11 +1,20 @@
 import React, { useMemo, useState } from 'react';
+import { Banknote, Check, Download, MessageCircle, Pause, Play, RotateCcw, Send, Share, Undo2 } from 'lucide-react';
 import { useOficina } from '../context/OficinaContext';
 import { FORMA_LABEL, STATUS_COR, STATUS_LABEL, type FormaPagamento, type StatusOS } from '../types';
-import { abrirWhatsApp, baixarOsPdf, gerarOsClientePdf, mensagemWhatsAppOs } from '../utils/osPdf';
+import {
+  abrirWhatsApp,
+  baixarOsPdf,
+  compartilharArquivo,
+  mensagemWhatsAppOs,
+} from '../utils/osPdf';
+import { gerarOsClientePdf } from '../utils/orcamentoPdfGerar';
 import { Campo, inputCompactClass } from './Campo';
 import { CorPicker } from './CorPicker';
+import { AcaoFooter, BarraFooter } from './AcaoFooter';
 import { FotoProduto, PecasServicosForm } from './PecasServicosForm';
 import { formatBRL, maskKmInput, parseKm, unidadesDoPedido } from '../utils/formatters';
+import { osPodeEditarItens, osPodeSeguirCotar, osTemPecaParaCotar } from '../utils/os';
 
 export const OSDetalheView: React.FC<{ osId: string; onBack: () => void }> = ({ osId, onBack }) => {
   const {
@@ -46,16 +55,13 @@ export const OSDetalheView: React.FC<{ osId: string; onBack: () => void }> = ({ 
 
   const total = osItens.reduce((s, i) => s + Number(i.valor_total), 0);
   const pecasComprar = osItens.filter((i) => i.tipo === 'produto' && i.origem_peca === 'comprar');
-  const pecasEstoque = osItens.filter((i) => i.tipo === 'produto' && i.origem_peca === 'estoque');
-  const servicos = osItens.filter((i) => i.tipo === 'servico');
   const modoCotar = os?.status === 'AguardandoCotar';
   const osAberta = os?.status === 'Aberta';
-  const cotarListaPronta = pecasComprar.every((i) => i.comprado && Number(i.valor_unitario) > 0);
   const temPreco = osItens.some((i) => Number(i.valor_unitario) > 0);
   const podeGerarPdf =
     isVendedor &&
     (modoCotar
-      ? osItens.length > 0 && cotarListaPronta && temPreco
+      ? osItens.length > 0 && osPodeSeguirCotar(osItens) && temPreco
       : temPreco && os?.status === 'AguardandoCliente');
 
   const persistirEntrada = (kmMasked: string, modeloAtual: string, corAtual: string) => {
@@ -91,26 +97,54 @@ export const OSDetalheView: React.FC<{ osId: string; onBack: () => void }> = ({ 
     if (!os || !cliente || !veiculo) return null;
     const st = os.status as StatusOS;
     if (st === 'Aberta') {
+      if (osTemPecaParaCotar(osItens)) {
+        return {
+          label: 'Cotar',
+          icon: <Send className="w-5 h-5" />,
+          action: () => mandarParaCotar(os.id),
+        };
+      }
       return {
-        label: 'Mandar pra cotar',
+        label: 'Enviar',
+        icon: <Send className="w-5 h-5" />,
         action: async () => {
-          if (osItens.length === 0) throw new Error('Liste serviço ou peça antes de mandar pra cotar');
-          await mandarParaCotar(os.id);
+          if (osItens.length === 0) throw new Error('Liste serviço ou peça antes de enviar');
+          await atualizarStatus(os.id, 'AguardandoCliente');
         },
       };
     }
+    if (st === 'AguardandoCotar' && osPodeSeguirCotar(osItens)) {
+      return {
+        label: 'Seguir',
+        icon: <Send className="w-5 h-5" />,
+        action: () => atualizarStatus(os.id, 'AguardandoCliente'),
+      };
+    }
     if (st === 'AguardandoCliente') {
-      return { label: 'Cliente aprovou • Começar', action: () => atualizarStatus(os.id, 'Fazendo') };
+      return {
+        label: 'Começar',
+        icon: <Play className="w-5 h-5" />,
+        action: () => atualizarStatus(os.id, 'Fazendo'),
+      };
     }
     if (st === 'Fazendo') {
-      return { label: 'Serviço pronto', action: () => atualizarStatus(os.id, 'Pronto') };
+      return {
+        label: 'Pronto',
+        icon: <Check className="w-5 h-5" />,
+        action: () => atualizarStatus(os.id, 'Pronto'),
+      };
     }
     if (st === 'TravadoPeca') {
-      return { label: 'Peça chegou • Retomar', action: () => atualizarStatus(os.id, 'Fazendo') };
+      return {
+        label: 'Retomar',
+        icon: <RotateCcw className="w-5 h-5" />,
+        action: () => atualizarStatus(os.id, 'Fazendo'),
+      };
     }
     if (st === 'Pronto' && isVendedor) {
       return {
-        label: 'Receber e entregar',
+        label: 'Entregar',
+        icon: <Banknote className="w-5 h-5" />,
         action: () => entregarOS(os.id, forma, total || Number(os.valor_total)),
       };
     }
@@ -119,7 +153,7 @@ export const OSDetalheView: React.FC<{ osId: string; onBack: () => void }> = ({ 
     os,
     cliente,
     veiculo,
-    osItens.length,
+    osItens,
     isVendedor,
     forma,
     total,
@@ -139,36 +173,78 @@ export const OSDetalheView: React.FC<{ osId: string; onBack: () => void }> = ({ 
     );
   }
 
-  const enviarCliente = async () => {
-    const pdf = gerarOsClientePdf({
+  const montarPdf = () =>
+    gerarOsClientePdf({
       oficinaNome: oficina?.nome || 'Oficina',
+      oficinaSegmento: oficina?.segmento,
       oficinaWhatsapp: oficina?.whatsapp || '',
+      oficinaEmail: oficina?.email,
       oficinaCnpj: oficina?.cnpj,
       oficinaEndereco: oficina?.endereco,
       numeroOs: os.numero_os,
       status: os.status as StatusOS,
       dataAbertura: os.data_abertura,
       previsao: os.data_previsao_entrega,
+      clienteTipo: cliente.tipo,
       clienteNome: cliente.nome,
+      clienteNomeFantasia: cliente.nome_fantasia,
+      clienteDocumento: cpf || cliente.cpf_cnpj,
+      clienteResponsavel: cliente.responsavel,
+      clienteCpfResponsavel: cliente.cpf_responsavel,
       clienteTelefone: telefone || cliente.telefone,
+      clienteEmail: cliente.email,
+      clienteEndereco: endereco || cliente.endereco,
+      clienteNumero: cliente.endereco_numero,
+      clienteComplemento: cliente.complemento,
+      clienteBairro: cliente.bairro,
+      clienteCidade: cliente.cidade,
+      clienteUf: cliente.uf,
+      clienteCep: cliente.cep,
       placa: veiculo.placa,
       modelo: veiculo.modelo,
       marca: veiculo.marca,
+      versao: veiculo.versao,
+      ano: veiculo.ano,
+      anoModelo: veiculo.ano_modelo,
       cor: cor || veiculo.cor,
       km: parseKm(km) ?? os.km_entrada,
       problema: os.problema_relatado,
       itens: osItens,
     });
-    baixarOsPdf(pdf);
+
+  const baixarPdf = async () => {
+    baixarOsPdf(await montarPdf());
+    await marcarPdfEnviado(os.id);
+  };
+
+  const compartilharPdf = async () => {
+    await compartilharArquivo(await montarPdf());
     await marcarPdfEnviado(os.id);
   };
 
   const resumoEntrada = [veiculo.placa || 'sem placa', modelo || veiculo.modelo, cor || veiculo.cor]
     .filter(Boolean)
     .join(' • ');
+  const podeEditarItens = osPodeEditarItens(os.status as StatusOS);
+  const pecasServicosForm = (
+    <PecasServicosForm
+      itens={osItens}
+      produtos={produtos}
+      podeEditar={podeEditarItens}
+      podeEditarPreco={podeEditarItens}
+      onErro={setErro}
+      onAddServico={(descricao, quantidade, valor) => adicionarServico(os.id, descricao, quantidade, valor)}
+      onAddPecaComprar={(descricao, quantidade, valor) => adicionarPecaComprar(os.id, descricao, quantidade, valor)}
+      onAddPecaEstoque={(produto, ehCaixa, quantidadePedido) =>
+        adicionarPecaEstoque(os.id, produto.id, unidadesDoPedido(produto, ehCaixa, quantidadePedido), ehCaixa)
+      }
+      onRemover={removerItem}
+      onAtualizarPreco={atualizarPrecoItem}
+    />
+  );
 
   return (
-    <div className="space-y-3 pb-28">
+    <div className="space-y-3 pb-20">
       <button type="button" onClick={onBack} className="text-xs text-[#cd3f00] font-medium">
         Voltar
       </button>
@@ -200,99 +276,55 @@ export const OSDetalheView: React.FC<{ osId: string; onBack: () => void }> = ({ 
             {endereco && <p>{endereco}</p>}
           </div>
 
-          <div className="bg-white border border-neutral-200 rounded-xl p-3 space-y-2">
-            <div>
-              <h3 className="text-xs font-semibold">Comprar</h3>
-              <p className="text-[10px] text-neutral-500">Confira a lista, marque o que comprou e depois informe o preço.</p>
-            </div>
-            {pecasComprar.length === 0 && (
-              <p className="text-[11px] text-neutral-500">Nenhuma peça para comprar.</p>
-            )}
-            {pecasComprar.map((it) => (
-              <div key={it.id} className="flex items-center gap-2 py-1 border-b border-neutral-100 last:border-0">
-                {it.produto_id ? (
-                  <FotoProduto url={produtos.find((p) => p.id === it.produto_id)?.foto_url} />
-                ) : null}
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-medium leading-tight truncate">{it.descricao}</div>
-                  <div className="text-[10px] text-neutral-500">{it.quantidade}x</div>
-                </div>
-                {it.comprado ? (
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="text-[10px] font-semibold text-emerald-700">Comprado</span>
-                    <input
-                      className="w-20 rounded-md border border-neutral-200 bg-white px-1.5 py-1 text-[11px] font-mono text-right"
-                      type="number"
-                      step="0.01"
-                      aria-label={`Preço de ${it.descricao}`}
-                      defaultValue={Number(it.valor_unitario) || ''}
-                      onBlur={(e) => {
-                        const v = Number(e.target.value);
-                        if (!Number.isNaN(v) && v !== Number(it.valor_unitario)) {
-                          void run(() => atualizarPrecoItem(it.id, v));
-                        }
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    className="shrink-0 px-2.5 py-1 rounded-md bg-[#cd3f00] text-white text-[11px] font-semibold"
-                    onClick={() => void run(() => marcarItemComprado(it.id))}
-                  >
-                    Comprado
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {pecasEstoque.length > 0 && (
-          <div className="bg-white border border-neutral-200 rounded-xl p-3 space-y-2">
-            <h3 className="text-xs font-semibold">Já no estoque</h3>
-            {pecasEstoque.map((it) => (
-              <div key={it.id} className="flex items-center gap-2 py-1 border-b border-neutral-100 last:border-0">
-                {it.produto_id ? (
-                  <FotoProduto url={produtos.find((p) => p.id === it.produto_id)?.foto_url} />
-                ) : null}
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-medium leading-tight truncate">{it.descricao}</div>
-                  <div className="text-[10px] text-neutral-500">{it.quantidade}x</div>
-                </div>
-                <div className="text-[11px] font-mono shrink-0">{formatBRL(Number(it.valor_total))}</div>
-              </div>
-            ))}
-          </div>
-          )}
-
-          {servicos.length > 0 && (
+          {pecasComprar.length > 0 ? (
             <div className="bg-white border border-neutral-200 rounded-xl p-3 space-y-2">
-              <h3 className="text-xs font-semibold">Mão de obra</h3>
-              {servicos.map((it) => (
+              <div>
+                <h3 className="text-xs font-semibold">Comprar</h3>
+                <p className="text-[10px] text-neutral-500">Confira a lista, marque o que comprou e depois informe o preço.</p>
+              </div>
+              {pecasComprar.map((it) => (
                 <div key={it.id} className="flex items-center gap-2 py-1 border-b border-neutral-100 last:border-0">
+                  {it.produto_id ? (
+                    <FotoProduto url={produtos.find((p) => p.id === it.produto_id)?.foto_url} />
+                  ) : null}
                   <div className="min-w-0 flex-1">
                     <div className="text-xs font-medium leading-tight truncate">{it.descricao}</div>
                     <div className="text-[10px] text-neutral-500">{it.quantidade}x</div>
                   </div>
-                  <input
-                    className="w-20 shrink-0 rounded-md border border-neutral-200 bg-white px-1.5 py-1 text-[11px] font-mono text-right"
-                    type="number"
-                    step="0.01"
-                    aria-label={`Preço de ${it.descricao}`}
-                    defaultValue={Number(it.valor_unitario) || ''}
-                    onBlur={(e) => {
-                      const v = Number(e.target.value);
-                      if (!Number.isNaN(v) && v !== Number(it.valor_unitario)) {
-                        void run(() => atualizarPrecoItem(it.id, v));
-                      }
-                    }}
-                  />
+                  {it.comprado ? (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-[10px] font-semibold text-emerald-700">Comprado</span>
+                      <input
+                        className="w-20 rounded-md border border-neutral-200 bg-white px-1.5 py-1 text-[11px] font-mono text-right"
+                        type="number"
+                        step="0.01"
+                        aria-label={`Preço de ${it.descricao}`}
+                        defaultValue={Number(it.valor_unitario) || ''}
+                        onBlur={(e) => {
+                          const v = Number(e.target.value);
+                          if (!Number.isNaN(v) && v !== Number(it.valor_unitario)) {
+                            void run(() => atualizarPrecoItem(it.id, v));
+                          }
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="shrink-0 px-2.5 py-1 rounded-md bg-[#cd3f00] text-white text-[11px] font-semibold"
+                      onClick={() => void run(() => marcarItemComprado(it.id))}
+                    >
+                      Comprado
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
+          ) : (
+            <p className="text-[11px] text-neutral-500">Nenhuma peça para comprar. Inclua peça e mão de obra ou siga em frente.</p>
           )}
 
-          <div className="text-right text-sm font-semibold">Total {formatBRL(total)}</div>
+          {pecasServicosForm}
         </>
       ) : osAberta ? (
         <>
@@ -307,13 +339,7 @@ export const OSDetalheView: React.FC<{ osId: string; onBack: () => void }> = ({ 
             {cpf && <p>{cpf}</p>}
             {endereco && <p>{endereco}</p>}
           </div>
-          <PecasServicosForm
-            itens={osItens}
-            produtos={produtos}
-            podeEditar={false}
-            podeEditarPreco={false}
-            onErro={setErro}
-          />
+          {pecasServicosForm}
         </>
       ) : (
         <>
@@ -376,31 +402,8 @@ export const OSDetalheView: React.FC<{ osId: string; onBack: () => void }> = ({ 
         </button>
       </div>
 
-      <PecasServicosForm
-        itens={osItens}
-        produtos={produtos}
-        podeEditar={os.status !== 'Entregue'}
-        podeEditarPreco={os.status !== 'Entregue'}
-        onErro={setErro}
-        onAddServico={(descricao, quantidade, valor) => adicionarServico(os.id, descricao, quantidade, valor)}
-        onAddPecaComprar={(descricao, quantidade, valor) => adicionarPecaComprar(os.id, descricao, quantidade, valor)}
-        onAddPecaEstoque={(produto, ehCaixa, quantidadePedido) =>
-          adicionarPecaEstoque(os.id, produto.id, unidadesDoPedido(produto, ehCaixa, quantidadePedido), ehCaixa)
-        }
-        onRemover={removerItem}
-        onAtualizarPreco={atualizarPrecoItem}
-      />
+      {pecasServicosForm}
         </>
-      )}
-
-      {os.status === 'Fazendo' && (
-        <button
-          type="button"
-          className="w-full py-2 rounded-lg border border-neutral-200 text-sm font-semibold"
-          onClick={() => void run(() => atualizarStatus(os.id, 'TravadoPeca'))}
-        >
-          Travou peça
-        </button>
       )}
 
       {os.status === 'Pronto' && isVendedor && (
@@ -420,59 +423,70 @@ export const OSDetalheView: React.FC<{ osId: string; onBack: () => void }> = ({ 
         </div>
       )}
 
+      {isVendedor && os.status === 'AguardandoCotar' && pecasComprar.length > 0 && !podeGerarPdf && (
+        <p className="text-center text-[11px] text-neutral-500">
+          {pecasComprar.some((i) => !i.comprado)
+            ? 'Marque as peças compradas para informar o preço'
+            : 'Informe o preço de cada peça comprada para gerar a OS'}
+        </p>
+      )}
       {erro && <p className="text-sm text-red-700">{erro}</p>}
 
-      <div className="fixed bottom-0 inset-x-0 bg-white border-t border-neutral-200 p-2.5 pb-[calc(env(safe-area-inset-bottom)+10px)] space-y-1.5">
-        {(telefone || cliente.telefone) && (
-          <button
-            type="button"
-            className="w-full py-2 rounded-lg border border-emerald-200 text-emerald-800 text-sm font-semibold"
-            onClick={() =>
-              abrirWhatsApp(
-                telefone || cliente.telefone || '',
-                mensagemWhatsAppOs({
-                  clienteNome: cliente.nome,
-                  numeroOs: os.numero_os,
-                  status: os.status as StatusOS,
-                  total,
-                  placa: veiculo.placa,
-                })
-              )
-            }
-          >
-            WhatsApp
-          </button>
-        )}
-        {isVendedor && os.status === 'AguardandoCotar' && !podeGerarPdf && (
-          <p className="text-center text-[11px] text-neutral-500">
-            {pecasComprar.some((i) => !i.comprado)
-              ? 'Marque as peças compradas para informar o preço'
-              : pecasComprar.some((i) => Number(i.valor_unitario) <= 0)
-                ? 'Informe o preço de cada peça comprada para gerar a OS'
-                : 'Preencha os valores para gerar a OS'}
-          </p>
-        )}
-        {podeGerarPdf && (
-          <button
-            type="button"
-            className={`w-full py-2 rounded-lg text-sm font-semibold ${
-              proximo ? 'border border-neutral-200 text-neutral-800' : 'bg-[#cd3f00] text-white'
-            }`}
-            onClick={() => void run(enviarCliente)}
-          >
-            Baixar OS
-          </button>
-        )}
-        {proximo && (
-          <button
-            type="button"
-            className="w-full py-2 rounded-lg bg-[#cd3f00] text-white text-sm font-semibold"
-            onClick={() => void run(proximo.action)}
-          >
-            {proximo.label}
-          </button>
-        )}
-      </div>
+      <BarraFooter>
+          {(telefone || cliente.telefone) && (
+            <AcaoFooter
+              label="WhatsApp"
+              icon={<MessageCircle className="w-5 h-5" />}
+              onClick={() =>
+                abrirWhatsApp(
+                  telefone || cliente.telefone || '',
+                  mensagemWhatsAppOs({
+                    clienteNome: cliente.nome,
+                    numeroOs: os.numero_os,
+                    status: os.status as StatusOS,
+                    total,
+                    placa: veiculo.placa,
+                  })
+                )
+              }
+            />
+          )}
+          <AcaoFooter
+            label="Baixar"
+            icon={<Download className="w-5 h-5" />}
+            disabled={!podeGerarPdf}
+            onClick={() => void run(baixarPdf)}
+          />
+          <AcaoFooter
+            label="Compartilhar"
+            icon={<Share className="w-5 h-5" />}
+            disabled={!podeGerarPdf}
+            onClick={() => void run(compartilharPdf)}
+          />
+          {os.status === 'Fazendo' ? (
+            <AcaoFooter
+              label="Travou"
+              icon={<Pause className="w-5 h-5" />}
+              tom="perigo"
+              onClick={() => void run(() => atualizarStatus(os.id, 'TravadoPeca'))}
+            />
+          ) : null}
+          {modoCotar ? (
+            <AcaoFooter
+              label="Voltar"
+              icon={<Undo2 className="w-5 h-5" />}
+              onClick={() => void run(() => atualizarStatus(os.id, 'Aberta'))}
+            />
+          ) : null}
+          {proximo ? (
+            <AcaoFooter
+              label={proximo.label}
+              icon={proximo.icon}
+              tom="destaque"
+              onClick={() => void run(proximo.action)}
+            />
+          ) : null}
+      </BarraFooter>
     </div>
   );
 };

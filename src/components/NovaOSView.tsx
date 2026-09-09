@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
+import { FilePlus2 } from 'lucide-react';
 import { useOficina, type ItemAbrirOS } from '../context/OficinaContext';
 import { QUEIXAS_RAPIDAS } from '../types';
+import { AcaoFooter, BarraFooter } from './AcaoFooter';
 import { Campo, inputClass, inputCompactClass } from './Campo';
 import { CorPicker } from './CorPicker';
 import { PecasServicosForm, type ItemPecaServico } from './PecasServicosForm';
@@ -132,7 +134,7 @@ export const NovaOSView: React.FC<{ onAbriu: (osId: string) => void; onBack?: ()
         if (tag === 'BUTTON' || tag === 'TEXTAREA') return;
         e.preventDefault();
       }}
-      className="space-y-4 pb-4"
+      className="space-y-4 pb-20"
     >
       <div>
         {onBack ? (
@@ -408,13 +410,15 @@ export const NovaOSView: React.FC<{ onAbriu: (osId: string) => void; onBack?: ()
 
       {erro && <p className="text-sm text-red-700">{erro}</p>}
 
-      <button
-        type="submit"
-        disabled={busy}
-        className="w-full py-3 rounded-xl bg-[#cd3f00] text-white font-semibold disabled:opacity-60"
-      >
-        {busy ? 'Abrindo…' : 'Abrir OS'}
-      </button>
+      <BarraFooter>
+        <AcaoFooter
+          type="submit"
+          label={busy ? 'Abrindo' : 'Abrir OS'}
+          icon={<FilePlus2 className="w-5 h-5" />}
+          tom="destaque"
+          disabled={busy}
+        />
+      </BarraFooter>
     </form>
   );
 };
