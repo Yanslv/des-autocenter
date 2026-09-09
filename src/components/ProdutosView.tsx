@@ -19,10 +19,11 @@ import {
 type Produto = Database['public']['Tables']['produtos']['Row'];
 type TipoMovimento = 'entrada' | 'saida';
 
-type FormProduto = Omit<ProdutoInput, 'preco_venda' | 'custo' | 'estoque_minimo'> & {
+type FormProduto = Omit<ProdutoInput, 'preco_venda' | 'custo' | 'estoque_minimo' | 'quantidade_inicial'> & {
   preco_venda: string;
   custo: string;
   estoque_minimo: string;
+  quantidade_inicial: string;
 };
 
 const formVazio: FormProduto = {
@@ -35,6 +36,7 @@ const formVazio: FormProduto = {
   eh_caixa: false,
   unidades_por_caixa: 1,
   estoque_minimo: '',
+  quantidade_inicial: '',
   avisar_estoque_baixo: true,
 };
 
@@ -171,6 +173,7 @@ export const ProdutosView: React.FC<{
       eh_caixa: p.eh_caixa,
       unidades_por_caixa: p.unidades_por_caixa,
       estoque_minimo: p.estoque_minimo === 0 ? '' : String(p.estoque_minimo),
+      quantidade_inicial: '',
       avisar_estoque_baixo: p.avisar_estoque_baixo,
     });
     setPreview(p.foto_url);
@@ -310,11 +313,15 @@ export const ProdutosView: React.FC<{
               setErro('');
               setBusy(true);
               try {
+                const unidadesPorCaixa = form.eh_caixa ? Math.max(1, form.unidades_por_caixa) : 1;
                 await salvarProduto({
                   ...form,
                   preco_venda: parseMoeda(form.preco_venda),
                   custo: parseMoeda(form.custo),
                   estoque_minimo: parseInteiro(form.estoque_minimo),
+                  quantidade_inicial: form.id
+                    ? undefined
+                    : parseInteiro(form.quantidade_inicial) * unidadesPorCaixa,
                 });
                 fecharForm();
               } catch (err) {
@@ -446,6 +453,20 @@ export const ProdutosView: React.FC<{
                     min={1}
                     value={form.unidades_por_caixa}
                     onChange={(e) => setForm((f) => ({ ...f, unidades_por_caixa: Number(e.target.value) }))}
+                  />
+                </Campo>
+              )}
+              {!form.id && (
+                <Campo label={form.eh_caixa ? 'Quantidade em estoque (caixas)' : 'Quantidade em estoque'}>
+                  <input
+                    className={inputClass}
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="0"
+                    value={form.quantidade_inicial}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, quantidade_inicial: maskInteiroInput(e.target.value) }))
+                    }
                   />
                 </Campo>
               )}

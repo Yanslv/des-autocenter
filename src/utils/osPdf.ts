@@ -234,3 +234,20 @@ export function baixarOsPdf(file: File) {
   a.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
+
+export async function compartilharArquivo(file: File) {
+  const dados: ShareData = { title: file.name, files: [file] };
+  const podeCompartilhar =
+    typeof navigator.share === 'function' &&
+    (typeof navigator.canShare !== 'function' || navigator.canShare(dados));
+  if (!podeCompartilhar) {
+    baixarOsPdf(file);
+    return;
+  }
+  try {
+    await navigator.share(dados);
+  } catch (erro) {
+    if (erro instanceof DOMException && erro.name === 'AbortError') return;
+    baixarOsPdf(file);
+  }
+}

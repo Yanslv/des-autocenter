@@ -13,6 +13,7 @@ import {
   ymdMaisDias,
 } from '../utils/financeiro';
 import { formatBRL, rotuloEstoque, saldoLivre } from '../utils/formatters';
+import { OrcamentoResumoCard } from './OrcamentosListaView';
 
 function diasDesde(iso: string | null) {
   if (!iso) return 0;
@@ -92,10 +93,22 @@ const MesCard: React.FC<{
 
 export const PainelView: React.FC<{
   onOpenOS: (id: string) => void;
+  onOpenOrcamento: (id: string) => void;
+  onVerTodosOrcamentos: () => void;
   onEstoqueCritico: (produtoId: string) => void;
-}> = ({ onOpenOS, onEstoqueCritico }) => {
-  const { isVendedor, ordens, clientes, veiculos, produtos, itens, vendas, vendaItens, marcarPosVenda } =
-    useOficina();
+}> = ({ onOpenOS, onOpenOrcamento, onVerTodosOrcamentos, onEstoqueCritico }) => {
+  const {
+    isVendedor,
+    ordens,
+    clientes,
+    veiculos,
+    produtos,
+    itens,
+    vendas,
+    vendaItens,
+    orcamentos,
+    marcarPosVenda,
+  } = useOficina();
   const [filtro, setFiltro] = useState<'cotar' | 'oficina' | 'pronto' | 'saiu'>(
     isVendedor ? 'cotar' : 'oficina'
   );
@@ -304,6 +317,34 @@ export const PainelView: React.FC<{
               <span className="text-amber-800 shrink-0">{rotuloEstoque(p)}</span>
             </button>
           ))}
+        </div>
+      )}
+
+      {orcamentos.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Orçamentos</p>
+          {orcamentos.slice(0, 4).map((orc) => {
+            const cliente = clientes.find((c) => c.id === orc.cliente_id);
+            const veiculo = veiculos.find((v) => v.id === orc.veiculo_id);
+            return (
+              <OrcamentoResumoCard
+                key={orc.id}
+                orc={orc}
+                clienteNome={cliente?.nome}
+                veiculo={veiculo}
+                onClick={() => onOpenOrcamento(orc.id)}
+              />
+            );
+          })}
+          {orcamentos.length > 4 ? (
+            <button
+              type="button"
+              onClick={onVerTodosOrcamentos}
+              className="w-full text-center text-sm font-medium text-[#cd3f00] py-1.5"
+            >
+              e mais ({orcamentos.length - 4})
+            </button>
+          ) : null}
         </div>
       )}
 

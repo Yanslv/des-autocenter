@@ -4,6 +4,15 @@ import { supabase } from '../lib/supabase';
 import type { Database } from '../types/database';
 import type { FormaPagamento, MotivoSaida, OrigemPeca, StatusOS, UserRole } from '../types';
 import { placaNormalizada, placaValida } from '../utils/formatters';
+import {
+  calcularTotaisOrcamento,
+  montarEnderecoCliente,
+  podeGerarOS,
+  podeReabrirOrcamento,
+  type StatusOrcamento,
+  type TipoClienteOrcamento,
+  type TipoItemOrcamento,
+} from '../utils/orcamento';
 
 type Cliente = Database['public']['Tables']['clientes']['Row'];
 type Veiculo = Database['public']['Tables']['veiculos']['Row'];
@@ -14,6 +23,8 @@ type Perfil = Database['public']['Tables']['perfis']['Row'];
 type Oficina = Database['public']['Tables']['oficinas']['Row'];
 type Venda = Database['public']['Tables']['vendas_avulsas']['Row'];
 type VendaItem = Database['public']['Tables']['venda_itens']['Row'];
+type Orcamento = Database['public']['Tables']['orcamentos']['Row'];
+type OrcamentoItem = Database['public']['Tables']['orcamento_itens']['Row'];
 
 export type ProdutoInput = {
   id?: string;
@@ -28,6 +39,7 @@ export type ProdutoInput = {
   unidades_por_caixa: number;
   estoque_minimo: number;
   avisar_estoque_baixo: boolean;
+  quantidade_inicial?: number;
 };
 
 function fail(error: { message: string } | null, fallback: string): never {
@@ -82,6 +94,64 @@ export type AbrirOSInput = {
   cpf?: string;
   endereco?: string;
   itens?: ItemAbrirOS[];
+  orcamentoId?: string;
+  marca?: string;
+  versao?: string;
+  ano?: number | null;
+  anoModelo?: number | null;
+};
+
+export type ClienteOrcamentoDados = {
+  tipo: TipoClienteOrcamento;
+  nome: string;
+  nomeFantasia?: string;
+  cpfCnpj?: string;
+  responsavel?: string;
+  cpfResponsavel?: string;
+  telefone?: string;
+  email?: string;
+  endereco?: string;
+  enderecoNumero?: string;
+  complemento?: string;
+  bairro?: string;
+  cidade?: string;
+  uf?: string;
+  cep?: string;
+};
+
+export type VeiculoOrcamentoDados = {
+  placa: string;
+  marca?: string;
+  modelo?: string;
+  versao?: string;
+  ano?: number | null;
+  anoModelo?: number | null;
+  cor?: string;
+  km?: number | null;
+};
+
+export type ItemSalvarOrcamento = {
+  tipo: TipoItemOrcamento;
+  descricao: string;
+  detalhe?: string;
+  quantidade: number;
+  valor: number;
+  produtoId?: string;
+  origemPeca?: OrigemPeca | null;
+};
+
+export type SalvarOrcamentoInput = {
+  id?: string;
+  clienteId?: string;
+  veiculoId?: string;
+  cliente: ClienteOrcamentoDados;
+  veiculo: VeiculoOrcamentoDados;
+  validadeDias: number;
+  prazoEstimadoDias?: number | null;
+  dataPrevisaoEntrega?: string | null;
+  observacao?: string;
+  desconto: number;
+  itens?: ItemSalvarOrcamento[];
 };
 
 type OficinaContextType = {
@@ -96,6 +166,8 @@ type OficinaContextType = {
   itens: OSItem[];
   vendas: Venda[];
   vendaItens: VendaItem[];
+  orcamentos: Orcamento[];
+  orcamentoItens: OrcamentoItem[];
   isVendedor: boolean;
   recarregar: () => Promise<void>;
   entrar: (email: string, senha: string) => Promise<void>;
@@ -103,6 +175,14 @@ type OficinaContextType = {
   sair: () => Promise<void>;
   buscarIdentidade: (termo: string) => BuscaHit[];
   abrirOS: (input: AbrirOSInput) => Promise<string>;
+  salvarOrcamento: (input: SalvarOrcamentoInput) => Promise<{ id: string; numero: number }>;
+  adicionarItemOrcamento: (orcamentoId: string, item: ItemSalvarOrcamento) => Promise<void>;
+  removerItemOrcamento: (itemId: string, orcamentoId: string) => Promise<void>;
+  marcarOrcamentoEnviado: (orcamentoId: string) => Promise<void>;
+  aprovarOrcamento: (orcamentoId: string, nome: string) => Promise<void>;
+  recusarOrcamento: (orcamentoId: string) => Promise<void>;
+  reabrirOrcamento: (orcamentoId: string) => Promise<void>;
+  gerarOsDoOrcamento: (orcamentoId: string) => Promise<string>;
   atualizarStatus: (osId: string, status: StatusOS) => Promise<void>;
   mandarParaCotar: (osId: string) => Promise<void>;
   marcarPdfEnviado: (osId: string) => Promise<void>;
@@ -126,11 +206,19 @@ type OficinaContextType = {
   }) => Promise<void>;
   atualizarCliente: (
     clienteId: string,
-    patch: { telefone?: string | null; cpf_cnpj?: string | null; endereco?: string | null }
+    patch: Database['public']['Tables']['clientes']['Update']
   ) => Promise<void>;
   entregarOS: (osId: string, forma: FormaPagamento, valorPago: number) => Promise<void>;
   marcarPosVenda: (osId: string) => Promise<void>;
-  salvarOficina: (patch: { nome?: string; whatsapp?: string; cnpj?: string; endereco?: string }) => Promise<void>;
+  salvarOficina: (patch: {
+    nome?: string;
+    whatsapp?: string;
+    cnpj?: string;
+    endereco?: string;
+    email?: string;
+    segmento?: string;
+    logo_url?: string | null;
+  }) => Promise<void>;
   salvarProduto: (input: ProdutoInput) => Promise<void>;
   removerProduto: (produtoId: string) => Promise<void>;
   entradaProduto: (produtoId: string, quantidade: number, custo: number) => Promise<void>;
@@ -156,6 +244,8 @@ export const OficinaProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [itens, setItens] = useState<OSItem[]>([]);
   const [vendas, setVendas] = useState<Venda[]>([]);
   const [vendaItens, setVendaItens] = useState<VendaItem[]>([]);
+  const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
+  const [orcamentoItens, setOrcamentoItens] = useState<OrcamentoItem[]>([]);
 
   const recarregar = useCallback(async () => {
     const { data: userData } = await supabase.auth.getUser();
@@ -169,6 +259,8 @@ export const OficinaProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setItens([]);
       setVendas([]);
       setVendaItens([]);
+      setOrcamentos([]);
+      setOrcamentoItens([]);
       return;
     }
 
@@ -184,7 +276,7 @@ export const OficinaProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
     setPerfil(perfilData);
 
-    const [{ data: ofi }, { data: cli }, { data: vei }, { data: prod }, { data: os }, { data: osItens }, { data: ven }, { data: venItens }] =
+    const [{ data: ofi }, { data: cli }, { data: vei }, { data: prod }, { data: os }, { data: osItens }, { data: ven }, { data: venItens }, { data: orc }, { data: orcItens }] =
       await Promise.all([
         supabase.from('oficinas').select('*').eq('id', perfilData.oficina_id).maybeSingle(),
         supabase.from('clientes').select('*').order('created_at', { ascending: false }),
@@ -194,6 +286,8 @@ export const OficinaProvider: React.FC<{ children: React.ReactNode }> = ({ child
         supabase.from('os_itens').select('*'),
         supabase.from('vendas_avulsas').select('*').order('data_venda', { ascending: false }),
         supabase.from('venda_itens').select('*'),
+        supabase.from('orcamentos').select('*').order('data_emissao', { ascending: false }),
+        supabase.from('orcamento_itens').select('*'),
       ]);
 
     setOficina(ofi ?? null);
@@ -204,6 +298,8 @@ export const OficinaProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setItens(osItens ?? []);
     setVendas(ven ?? []);
     setVendaItens(venItens ?? []);
+    setOrcamentos(orc ?? []);
+    setOrcamentoItens(orcItens ?? []);
   }, []);
 
   useEffect(() => {
@@ -340,6 +436,10 @@ export const OficinaProvider: React.FC<{ children: React.ReactNode }> = ({ child
           placa,
           modelo,
           cor,
+          marca: input.marca?.trim() || null,
+          versao: input.versao?.trim() || null,
+          ano: input.ano ?? null,
+          ano_modelo: input.anoModelo ?? null,
         })
         .select('*')
         .single();
@@ -355,7 +455,14 @@ export const OficinaProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const { error: veiErr } = await supabase
       .from('veiculos')
-      .update({ modelo, cor })
+      .update({
+        modelo,
+        cor,
+        marca: input.marca?.trim() || null,
+        versao: input.versao?.trim() || null,
+        ano: input.ano ?? null,
+        ano_modelo: input.anoModelo ?? null,
+      })
       .eq('id', veiculoId as string);
     if (veiErr) throw new Error(veiErr.message);
 
@@ -373,6 +480,7 @@ export const OficinaProvider: React.FC<{ children: React.ReactNode }> = ({ child
         prazo_dias: input.prazoDias,
         data_previsao_entrega: previsao.toISOString().slice(0, 10),
         km_entrada: input.km ?? null,
+        orcamento_id: input.orcamentoId || null,
         status: 'Aberta',
       })
       .select('*')
@@ -410,6 +518,14 @@ export const OficinaProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     if ((input.itens ?? []).length > 0) {
       await supabase.rpc('recalcular_total_os', { p_os_id: os.id });
+    }
+
+    if (input.orcamentoId) {
+      const { error: orcErr } = await supabase
+        .from('orcamentos')
+        .update({ os_id: os.id })
+        .eq('id', input.orcamentoId);
+      if (orcErr) throw new Error(orcErr.message);
     }
 
     await recarregar();
@@ -557,7 +673,7 @@ export const OficinaProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const atualizarCliente = async (
     clienteId: string,
-    patch: { telefone?: string | null; cpf_cnpj?: string | null; endereco?: string | null }
+    patch: Database['public']['Tables']['clientes']['Update']
   ) => {
     const { error } = await supabase.from('clientes').update(patch).eq('id', clienteId);
     if (error) throw new Error(error.message);
@@ -587,7 +703,262 @@ export const OficinaProvider: React.FC<{ children: React.ReactNode }> = ({ child
     await recarregar();
   };
 
-  const salvarOficina = async (patch: { nome?: string; whatsapp?: string; cnpj?: string; endereco?: string }) => {
+  const patchClienteOrcamento = (oficinaId: string, input: ClienteOrcamentoDados) => ({
+    oficina_id: oficinaId,
+    tipo: input.tipo,
+    nome: input.nome.trim(),
+    nome_fantasia: input.nomeFantasia?.trim() || null,
+    cpf_cnpj: input.cpfCnpj?.trim() || null,
+    responsavel: input.responsavel?.trim() || null,
+    cpf_responsavel: input.cpfResponsavel?.trim() || null,
+    telefone: input.telefone?.trim() || null,
+    email: input.email?.trim() || null,
+    endereco: input.endereco?.trim() || null,
+    endereco_numero: input.enderecoNumero?.trim() || null,
+    complemento: input.complemento?.trim() || null,
+    bairro: input.bairro?.trim() || null,
+    cidade: input.cidade?.trim() || null,
+    uf: input.uf?.trim() || null,
+    cep: input.cep?.trim() || null,
+  });
+
+  const garantirClienteOrcamento = async (
+    oficinaId: string,
+    clienteId: string | undefined,
+    dados: ClienteOrcamentoDados
+  ) => {
+    const nome = dados.nome.trim();
+    if (!nome && !clienteId) return null;
+    const patch = patchClienteOrcamento(oficinaId, { ...dados, nome: nome || 'Cliente' });
+    if (clienteId) {
+      const { error } = await supabase.from('clientes').update(patch).eq('id', clienteId);
+      if (error) throw new Error(error.message);
+      return clienteId;
+    }
+    const mesmoNome = clientes.find((c) => !c.eh_balcao && c.nome.trim().toLowerCase() === nome.toLowerCase());
+    if (mesmoNome) {
+      const { error } = await supabase.from('clientes').update(patch).eq('id', mesmoNome.id);
+      if (error) throw new Error(error.message);
+      return mesmoNome.id;
+    }
+    const { data, error } = await supabase.from('clientes').insert(patch).select('id').single();
+    if (error || !data) fail(error, 'Não foi possível salvar o cliente');
+    return data.id;
+  };
+
+  const garantirVeiculoOrcamento = async (
+    oficinaId: string,
+    clienteId: string | null,
+    veiculoId: string | undefined,
+    dados: VeiculoOrcamentoDados
+  ) => {
+    const placa = placaNormalizada(dados.placa);
+    if (!placa && !veiculoId) return null;
+    if (!clienteId) return null;
+    const patch = {
+      oficina_id: oficinaId,
+      cliente_id: clienteId,
+      placa: placa || null,
+      marca: dados.marca?.trim() || null,
+      modelo: dados.modelo?.trim() || null,
+      versao: dados.versao?.trim() || null,
+      ano: dados.ano ?? null,
+      ano_modelo: dados.anoModelo ?? null,
+      cor: dados.cor || null,
+    };
+    const existente =
+      (veiculoId && veiculos.find((v) => v.id === veiculoId)) ||
+      (placa ? veiculos.find((v) => placaNormalizada(v.placa || '') === placa) : undefined);
+    if (existente) {
+      const { error } = await supabase.from('veiculos').update(patch).eq('id', existente.id);
+      if (error) throw new Error(error.message);
+      return existente.id;
+    }
+    const { data, error } = await supabase.from('veiculos').insert(patch).select('id').single();
+    if (error || !data) fail(error, 'Não foi possível salvar o veículo');
+    return data.id;
+  };
+
+  const inserirItensOrcamento = async (oficinaId: string, orcamentoId: string, itens: ItemSalvarOrcamento[]) => {
+    for (const item of itens) {
+      const { error } = await supabase.from('orcamento_itens').insert({
+        oficina_id: oficinaId,
+        orcamento_id: orcamentoId,
+        tipo: item.tipo,
+        descricao: item.descricao,
+        detalhe: item.detalhe?.trim() || null,
+        quantidade: item.quantidade,
+        valor_unitario: item.valor,
+        valor_total: item.quantidade * item.valor,
+        produto_id: item.produtoId || null,
+        origem_peca: item.origemPeca || null,
+      });
+      if (error) throw new Error(error.message);
+    }
+    const { error } = await supabase.rpc('recalcular_total_orcamento', { p_orcamento_id: orcamentoId });
+    if (error) throw new Error(error.message);
+  };
+
+  const salvarOrcamento = async (input: SalvarOrcamentoInput) => {
+    if (!perfil) throw new Error('Sem perfil');
+    const oficinaId = perfil.oficina_id;
+    const temPlaca = placaNormalizada(input.veiculo.placa);
+    const clienteId = await garantirClienteOrcamento(oficinaId, input.clienteId, {
+      ...input.cliente,
+      nome: input.cliente.nome.trim() || (temPlaca ? 'Cliente' : ''),
+    });
+    const veiculoId = await garantirVeiculoOrcamento(oficinaId, clienteId, input.veiculoId, input.veiculo);
+    const itensCalculo = (input.itens ?? []).map((i) => ({ tipo: i.tipo, valor_total: i.quantidade * i.valor }));
+    const totais = calcularTotaisOrcamento(itensCalculo, input.desconto);
+    const payload = {
+      cliente_id: clienteId,
+      veiculo_id: veiculoId,
+      validade_dias: input.validadeDias,
+      prazo_estimado_dias: input.prazoEstimadoDias ?? null,
+      data_previsao_entrega: input.dataPrevisaoEntrega || null,
+      km: input.veiculo.km ?? null,
+      observacao: input.observacao?.trim() || null,
+      desconto: input.itens ? totais.desconto : Math.max(0, input.desconto),
+    };
+
+    if (input.id) {
+      const atual = orcamentos.find((o) => o.id === input.id);
+      const { error } = await supabase.from('orcamentos').update(payload).eq('id', input.id);
+      if (error) throw new Error(error.message);
+      const { error: totErr } = await supabase.rpc('recalcular_total_orcamento', { p_orcamento_id: input.id });
+      if (totErr) throw new Error(totErr.message);
+      await recarregar();
+      return { id: input.id, numero: atual?.numero_orcamento || 0 };
+    }
+
+    const { data, error } = await supabase
+      .from('orcamentos')
+      .insert({ oficina_id: oficinaId, status: 'rascunho', ...payload })
+      .select('id, numero_orcamento')
+      .single();
+    if (error || !data) fail(error, 'Não foi possível salvar o orçamento');
+    if ((input.itens ?? []).length > 0) {
+      await inserirItensOrcamento(oficinaId, data.id, input.itens ?? []);
+    }
+    await recarregar();
+    return { id: data.id, numero: data.numero_orcamento };
+  };
+
+  const adicionarItemOrcamento = async (orcamentoId: string, item: ItemSalvarOrcamento) => {
+    if (!perfil) throw new Error('Sem perfil');
+    await inserirItensOrcamento(perfil.oficina_id, orcamentoId, [item]);
+    await recarregar();
+  };
+
+  const removerItemOrcamento = async (itemId: string, orcamentoId: string) => {
+    const { error } = await supabase.from('orcamento_itens').delete().eq('id', itemId);
+    if (error) throw new Error(error.message);
+    const { error: totErr } = await supabase.rpc('recalcular_total_orcamento', { p_orcamento_id: orcamentoId });
+    if (totErr) throw new Error(totErr.message);
+    await recarregar();
+  };
+
+  const marcarOrcamentoEnviado = async (orcamentoId: string) => {
+    const atual = orcamentos.find((o) => o.id === orcamentoId);
+    const proximo = atual?.status === 'rascunho' ? 'enviado' : atual?.status;
+    const { error } = await supabase
+      .from('orcamentos')
+      .update({ pdf_enviado_em: new Date().toISOString(), status: proximo })
+      .eq('id', orcamentoId);
+    if (error) throw new Error(error.message);
+    await recarregar();
+  };
+
+  const aprovarOrcamento = async (orcamentoId: string, nome: string) => {
+    const { error } = await supabase
+      .from('orcamentos')
+      .update({
+        status: 'aprovado',
+        aprovado_nome: nome.trim(),
+        aprovado_em: new Date().toISOString(),
+      })
+      .eq('id', orcamentoId);
+    if (error) throw new Error(error.message);
+    await recarregar();
+  };
+
+  const recusarOrcamento = async (orcamentoId: string) => {
+    const { error } = await supabase.from('orcamentos').update({ status: 'recusado' }).eq('id', orcamentoId);
+    if (error) throw new Error(error.message);
+    await recarregar();
+  };
+
+  const reabrirOrcamento = async (orcamentoId: string) => {
+    const atual = orcamentos.find((o) => o.id === orcamentoId);
+    if (!podeReabrirOrcamento(atual?.status as StatusOrcamento)) {
+      throw new Error('Só é possível reabrir um orçamento recusado');
+    }
+    const { error } = await supabase.from('orcamentos').update({ status: 'rascunho' }).eq('id', orcamentoId);
+    if (error) throw new Error(error.message);
+    await recarregar();
+  };
+
+  const gerarOsDoOrcamento = async (orcamentoId: string) => {
+    const orc = orcamentos.find((o) => o.id === orcamentoId);
+    if (!orc) throw new Error('Orçamento não encontrado');
+    if (!podeGerarOS(orc.status as StatusOrcamento, orc.os_id)) {
+      throw new Error('Só é possível gerar OS de um orçamento aprovado');
+    }
+    const cliente = clientes.find((c) => c.id === orc.cliente_id);
+    const veiculo = veiculos.find((v) => v.id === orc.veiculo_id);
+    if (!cliente?.nome) throw new Error('Informe o cliente antes de gerar a OS');
+    if (!placaValida(veiculo?.placa || '')) throw new Error('Informe uma placa válida antes de gerar a OS');
+    const itensOrc = orcamentoItens.filter((i) => i.orcamento_id === orcamentoId);
+    const itens: ItemAbrirOS[] = itensOrc.map((i) => {
+      if (i.tipo === 'produto' && i.origem_peca === 'estoque' && i.produto_id) {
+        return {
+          tipo: 'estoque',
+          produtoId: i.produto_id,
+          quantidadeUnidades: i.quantidade,
+          ehCaixa: false,
+        };
+      }
+      if (i.tipo === 'produto') {
+        return { tipo: 'comprar', descricao: i.descricao, quantidade: i.quantidade, valor: Number(i.valor_unitario) };
+      }
+      return { tipo: 'servico', descricao: i.descricao, quantidade: i.quantidade, valor: Number(i.valor_unitario) };
+    });
+    const problema =
+      itensOrc
+        .filter((i) => i.tipo === 'servico')
+        .map((i) => i.descricao)
+        .join(', ') || `Conforme orçamento ${orc.numero_orcamento}`;
+    return abrirOS({
+      placa: veiculo?.placa || '',
+      clienteNome: cliente.nome,
+      clienteId: cliente.id,
+      veiculoId: veiculo?.id,
+      problema,
+      prazoDias: orc.prazo_estimado_dias ?? 2,
+      km: orc.km,
+      modelo: veiculo?.modelo || '',
+      cor: veiculo?.cor || '',
+      marca: veiculo?.marca || '',
+      versao: veiculo?.versao || '',
+      ano: veiculo?.ano,
+      anoModelo: veiculo?.ano_modelo,
+      telefone: cliente.telefone || '',
+      cpf: cliente.cpf_cnpj || '',
+      endereco: montarEnderecoCliente(cliente) || cliente.endereco || '',
+      itens,
+      orcamentoId,
+    });
+  };
+
+  const salvarOficina = async (patch: {
+    nome?: string;
+    whatsapp?: string;
+    cnpj?: string;
+    endereco?: string;
+    email?: string;
+    segmento?: string;
+    logo_url?: string | null;
+  }) => {
     if (!oficina) throw new Error('Sem oficina');
     const { error } = await supabase.from('oficinas').update(patch).eq('id', oficina.id);
     if (error) throw new Error(error.message);
@@ -626,6 +997,15 @@ export const OficinaProvider: React.FC<{ children: React.ReactNode }> = ({ child
         .single();
       if (error || !data) fail(error, 'Não foi possível cadastrar o produto');
       produtoId = data.id;
+      const quantidadeInicial = Math.max(0, Math.floor(input.quantidade_inicial ?? 0));
+      if (quantidadeInicial > 0) {
+        const { error: entradaError } = await supabase.rpc('entrada_produto', {
+          p_produto_id: produtoId,
+          p_quantidade: quantidadeInicial,
+          p_custo: input.custo,
+        });
+        if (entradaError) throw new Error(entradaError.message);
+      }
     }
 
     if (input.foto && produtoId) {
@@ -709,6 +1089,8 @@ export const OficinaProvider: React.FC<{ children: React.ReactNode }> = ({ child
       itens,
       vendas,
       vendaItens,
+      orcamentos,
+      orcamentoItens,
       isVendedor: perfil?.papel === 'vendedor',
       recarregar,
       entrar,
@@ -716,6 +1098,14 @@ export const OficinaProvider: React.FC<{ children: React.ReactNode }> = ({ child
       sair,
       buscarIdentidade,
       abrirOS,
+      salvarOrcamento,
+      adicionarItemOrcamento,
+      removerItemOrcamento,
+      marcarOrcamentoEnviado,
+      aprovarOrcamento,
+      recusarOrcamento,
+      reabrirOrcamento,
+      gerarOsDoOrcamento,
       atualizarStatus,
       mandarParaCotar,
       marcarPdfEnviado,
@@ -748,6 +1138,8 @@ export const OficinaProvider: React.FC<{ children: React.ReactNode }> = ({ child
       itens,
       vendas,
       vendaItens,
+      orcamentos,
+      orcamentoItens,
       recarregar,
       buscarIdentidade,
     ]

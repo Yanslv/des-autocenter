@@ -5,9 +5,12 @@ import { Campo, inputClass } from './Campo';
 export const OficinaConfigView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { oficina, salvarOficina } = useOficina();
   const [nome, setNome] = useState(oficina?.nome || '');
+  const [segmento, setSegmento] = useState(oficina?.segmento || '');
   const [whatsapp, setWhatsapp] = useState(oficina?.whatsapp || '');
+  const [email, setEmail] = useState(oficina?.email || '');
   const [cnpj, setCnpj] = useState(oficina?.cnpj || '');
   const [endereco, setEndereco] = useState(oficina?.endereco || '');
+  const [logoUrl, setLogoUrl] = useState(oficina?.logo_url || '');
   const [erro, setErro] = useState('');
 
   return (
@@ -17,7 +20,15 @@ export const OficinaConfigView: React.FC<{ onBack: () => void }> = ({ onBack }) 
         e.preventDefault();
         setErro('');
         try {
-          await salvarOficina({ nome, whatsapp, cnpj, endereco });
+          await salvarOficina({
+            nome,
+            segmento,
+            whatsapp,
+            email,
+            cnpj,
+            endereco,
+            logo_url: logoUrl.trim() || null,
+          });
           onBack();
         } catch (err) {
           setErro(err instanceof Error ? err.message : 'Erro');
@@ -31,8 +42,22 @@ export const OficinaConfigView: React.FC<{ onBack: () => void }> = ({ onBack }) 
       <Campo label="Nome">
         <input className={inputClass} value={nome} onChange={(e) => setNome(e.target.value)} />
       </Campo>
+      <Campo label="Segmento">
+        <input
+          className={inputClass}
+          value={segmento}
+          onChange={(e) => setSegmento(e.target.value)}
+          placeholder="Estética automotiva"
+        />
+      </Campo>
       <Campo label="WhatsApp">
         <input className={inputClass} value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} />
+      </Campo>
+      <Campo label="E-mail">
+        <input className={inputClass} value={email} onChange={(e) => setEmail(e.target.value)} />
+      </Campo>
+      <Campo label="Logo (URL pública)">
+        <input className={inputClass} value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} />
       </Campo>
       <Campo label="CNPJ">
         <input className={inputClass} value={cnpj} onChange={(e) => setCnpj(e.target.value)} />

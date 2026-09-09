@@ -17,6 +17,10 @@ export interface PrazoOSInfo {
 export function parseDateSafe(dateInput: string | Date | undefined | null): Date {
   if (!dateInput) return new Date();
   if (dateInput instanceof Date) return dateInput;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+    const [ano, mes, dia] = dateInput.split('-').map(Number);
+    return new Date(ano, mes - 1, dia);
+  }
   const d = new Date(dateInput);
   return isNaN(d.getTime()) ? new Date() : d;
 }

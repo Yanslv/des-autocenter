@@ -6,7 +6,8 @@ import { LoginView } from './components/LoginView';
 import { BottomNav, type Aba } from './components/BottomNav';
 import { PainelView } from './components/PainelView';
 import { ClientesView } from './components/ClientesView';
-import { NovaOSView } from './components/NovaOSView';
+import { OrcamentoView } from './components/OrcamentoView';
+import { OrcamentosListaView } from './components/OrcamentosListaView';
 import { OSDetalheView } from './components/OSDetalheView';
 import { VendaBalcaoView } from './components/VendaBalcaoView';
 import { ProdutosView } from './components/ProdutosView';
@@ -19,20 +20,20 @@ const PageShell: React.FC<{
   footer?: React.ReactNode;
   cartCount?: number;
   onCartClick?: () => void;
-  onNovaOS?: () => void;
+  onNovoOrcamento?: () => void;
   onConfig?: () => void;
   tecladoAberto?: boolean;
-}> = ({ children, footer, cartCount, onCartClick, onNovaOS, onConfig, tecladoAberto }) => (
+}> = ({ children, footer, cartCount, onCartClick, onNovoOrcamento, onConfig, tecladoAberto }) => (
   <div className={`min-h-dvh bg-[#F7F7F8] ${footer && !tecladoAberto ? 'pb-32' : ''}`}>
     <AppHeader cartCount={cartCount} onCartClick={onCartClick} onConfig={onConfig} />
     <div className="px-4 pt-4">
       <div className="max-w-lg mx-auto">{children}</div>
     </div>
-    {onNovaOS && !tecladoAberto ? (
+    {onNovoOrcamento && !tecladoAberto ? (
       <button
         type="button"
-        aria-label="Nova OS"
-        onClick={onNovaOS}
+        aria-label="Novo orçamento"
+        onClick={onNovoOrcamento}
         className="fixed z-50 right-4 bottom-[calc(5.25rem+env(safe-area-inset-bottom))] w-14 h-14 rounded-full bg-[#cd3f00] text-white shadow-lg flex items-center justify-center active:bg-[#a83300]"
       >
         <Plus className="w-7 h-7" strokeWidth={2.5} />
@@ -47,7 +48,9 @@ const Shell: React.FC = () => {
   const { session, perfil, carregando } = useOficina();
   const [aba, setAba] = useState<Aba>('painel');
   const [osId, setOsId] = useState<string | null>(null);
-  const [novaOS, setNovaOS] = useState(false);
+  const [orcamentoId, setOrcamentoId] = useState<string | null>(null);
+  const [novoOrcamento, setNovoOrcamento] = useState(false);
+  const [listaOrcamentos, setListaOrcamentos] = useState(false);
   const [config, setConfig] = useState(false);
   const [produtoFoco, setProdutoFoco] = useState<string | null>(null);
   const [cartCount, setCartCount] = useState(0);
@@ -63,14 +66,25 @@ const Shell: React.FC = () => {
 
   const openOS = (id: string) => {
     setOsId(id);
-    setNovaOS(false);
+    setOrcamentoId(null);
+    setNovoOrcamento(false);
+    setListaOrcamentos(false);
+    setConfig(false);
+  };
+
+  const openOrcamento = (id: string) => {
+    setOrcamentoId(id);
+    setNovoOrcamento(false);
+    setOsId(null);
     setConfig(false);
   };
 
   const openConfig = () => {
     setConfig(true);
     setOsId(null);
-    setNovaOS(false);
+    setOrcamentoId(null);
+    setNovoOrcamento(false);
+    setListaOrcamentos(false);
   };
 
   if (osId) {
@@ -89,16 +103,37 @@ const Shell: React.FC = () => {
     );
   }
 
-  if (novaOS) {
+  if (novoOrcamento || orcamentoId) {
     return (
       <PageShell tecladoAberto={tecladoAberto} onConfig={openConfig}>
-        <NovaOSView
-          onBack={() => setNovaOS(false)}
-          onAbriu={(id) => {
-            setNovaOS(false);
+        <OrcamentoView
+          orcamentoId={orcamentoId || undefined}
+          onBack={() => {
+            setNovoOrcamento(false);
+            setOrcamentoId(null);
+          }}
+          onSalvou={(id) => {
+            setNovoOrcamento(false);
+            setOrcamentoId(id);
+          }}
+          onAbriuOS={(id) => {
+            setNovoOrcamento(false);
+            setOrcamentoId(null);
+            setListaOrcamentos(false);
             setOsId(id);
             setAba('painel');
           }}
+        />
+      </PageShell>
+    );
+  }
+
+  if (listaOrcamentos) {
+    return (
+      <PageShell tecladoAberto={tecladoAberto} onConfig={openConfig}>
+        <OrcamentosListaView
+          onBack={() => setListaOrcamentos(false)}
+          onOpenOrcamento={openOrcamento}
         />
       </PageShell>
     );
@@ -110,12 +145,17 @@ const Shell: React.FC = () => {
       footer={<BottomNav aba={aba} onChange={setAba} />}
       cartCount={aba === 'venda' ? cartCount : undefined}
       onCartClick={aba === 'venda' ? () => setPedidoCarrinho((n) => n + 1) : undefined}
-      onNovaOS={() => setNovaOS(true)}
+      onNovoOrcamento={() => {
+        setOrcamentoId(null);
+        setNovoOrcamento(true);
+      }}
       onConfig={openConfig}
     >
       {aba === 'painel' && (
         <PainelView
           onOpenOS={openOS}
+          onOpenOrcamento={openOrcamento}
+          onVerTodosOrcamentos={() => setListaOrcamentos(true)}
           onEstoqueCritico={(id) => {
             setProdutoFoco(id);
             setAba('produtos');
