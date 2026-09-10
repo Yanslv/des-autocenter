@@ -27,12 +27,34 @@ export function validarTravamento(itemId: string | null | undefined, observacao:
   return null;
 }
 
+function contarGrupo(itens: Array<{ executado?: boolean | null }>) {
+  return {
+    feitos: itens.filter((i) => i.executado).length,
+    total: itens.length,
+  };
+}
+
 export function progressoChecklist(itens: Array<{ executado?: boolean | null }>): {
   feitos: number;
   total: number;
 } {
+  return contarGrupo(itens);
+}
+
+export function resumoChecklist(
+  itens: Array<{ executado?: boolean | null; tipo: string }>
+): {
+  feitos: number;
+  total: number;
+  pct: number;
+  servicos: { feitos: number; total: number };
+  pecas: { feitos: number; total: number };
+} {
+  const geral = contarGrupo(itens);
   return {
-    feitos: itens.filter((i) => i.executado).length,
-    total: itens.length,
+    ...geral,
+    pct: geral.total === 0 ? 0 : Math.round((geral.feitos / geral.total) * 100),
+    servicos: contarGrupo(itens.filter((i) => i.tipo === 'servico')),
+    pecas: contarGrupo(itens.filter((i) => i.tipo !== 'servico')),
   };
 }

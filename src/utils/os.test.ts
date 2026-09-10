@@ -4,6 +4,7 @@ import {
   osPodeSeguirCotar,
   osTemPecaParaCotar,
   progressoChecklist,
+  resumoChecklist,
   validarTravamento,
 } from './os';
 
@@ -53,5 +54,28 @@ assert.deepEqual(
   ]),
   { feitos: 2, total: 3 }
 );
+
+assert.deepEqual(resumoChecklist([]), {
+  feitos: 0,
+  total: 0,
+  pct: 0,
+  servicos: { feitos: 0, total: 0 },
+  pecas: { feitos: 0, total: 0 },
+});
+assert.deepEqual(
+  resumoChecklist([
+    { tipo: 'servico', executado: true },
+    { tipo: 'servico', executado: false },
+    { tipo: 'produto', executado: true },
+  ]),
+  {
+    feitos: 2,
+    total: 3,
+    pct: 67,
+    servicos: { feitos: 1, total: 2 },
+    pecas: { feitos: 1, total: 1 },
+  }
+);
+assert.equal(resumoChecklist([{ tipo: 'servico', executado: true }]).pct, 100);
 
 console.log('os.test.ts ok');

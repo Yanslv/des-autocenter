@@ -16,7 +16,7 @@ import { FotoProduto, PecasServicosForm } from './PecasServicosForm';
 import { OficinaChecklist } from './OficinaChecklist';
 import { TravouModal } from './TravouModal';
 import { formatBRL, maskKmInput, parseKm, unidadesDoPedido } from '../utils/formatters';
-import { osPodeEditarItens, osPodeSeguirCotar, osTemPecaParaCotar } from '../utils/os';
+import { osPodeEditarItens, osPodeSeguirCotar, osTemPecaParaCotar, resumoChecklist } from '../utils/os';
 
 export const OSDetalheView: React.FC<{ osId: string; onBack: () => void }> = ({ osId, onBack }) => {
   const {
@@ -262,9 +262,14 @@ export const OSDetalheView: React.FC<{ osId: string; onBack: () => void }> = ({ 
             {veiculo.placa || 'sem placa'} {veiculo.modelo ? `• ${veiculo.modelo}` : ''}
           </p>
         </div>
-        <span className={`shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full ${STATUS_COR[os.status as StatusOS].badge}`}>
-          {STATUS_LABEL[os.status as StatusOS]}
-        </span>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${STATUS_COR[os.status as StatusOS].badge}`}>
+            {STATUS_LABEL[os.status as StatusOS]}
+          </span>
+          {naOficina && osItens.length > 0 ? (
+            <span className="text-[10px] font-semibold tabular-nums text-neutral-500">{resumoChecklist(osItens).pct}%</span>
+          ) : null}
+        </div>
       </div>
 
       <div className="bg-neutral-200/70 rounded-xl px-3 py-2">

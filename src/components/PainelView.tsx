@@ -14,6 +14,7 @@ import {
 } from '../utils/financeiro';
 import { formatBRL, rotuloEstoque, saldoLivre } from '../utils/formatters';
 import { OrcamentoResumoCard } from './OrcamentosListaView';
+import { OsProgressoCabecalho, OsProgressoItens } from './OsProgressoResumo';
 
 function diasDesde(iso: string | null) {
   if (!iso) return 0;
@@ -116,6 +117,7 @@ export const PainelView: React.FC<{
   const [blocoMes, setBlocoMes] = useState(false);
   const [kpiHoje, setKpiHoje] = useState<string | null>(null);
   const [kpiMes, setKpiMes] = useState<string | null>(null);
+  const [osProgressoAberto, setOsProgressoAberto] = useState<string | null>(null);
 
   const hoje = new Date().toISOString().slice(0, 10);
   const ontem = ymdMaisDias(hoje, -1);
@@ -407,35 +409,53 @@ export const PainelView: React.FC<{
           const cor = STATUS_COR[status];
           const atrasada =
             os.status !== 'Entregue' && os.data_previsao_entrega && os.data_previsao_entrega < hoje;
+          const osItens = itens.filter((i) => i.os_id === os.id);
+          const mostraProgresso =
+            (status === 'Fazendo' || status === 'TravadoPeca') && osItens.length > 0;
+          const progressoAberto = osProgressoAberto === os.id;
           return (
-            <button
+            <div
               key={os.id}
-              type="button"
-              onClick={() => onOpenOS(os.id)}
-              className={`w-full text-left bg-white border border-neutral-200 border-l-2 rounded-sm px-2.5 py-2 ${cor.borda}`}
+              className={`bg-white border border-neutral-200 border-l-2 rounded-sm ${cor.borda}`}
             >
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-mono text-xs font-semibold">OS-{os.numero_os}</span>
-                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-sm ${cor.badge}`}>
-                  {STATUS_LABEL[status]}
-                </span>
-              </div>
-              <div className="text-sm font-medium text-neutral-900 leading-tight">
-                {cliente?.nome || 'Cliente'}
-              </div>
-              <div className="text-xs text-neutral-500">
-                {veiculo?.placa || 'sem placa'} {veiculo?.modelo ? `• ${veiculo.modelo}` : ''}
-              </div>
-              {atrasada && <div className="text-[11px] font-semibold text-red-700">Prazo atrasado</div>}
-              {status === 'TravadoPeca' && os.travado_observacao ? (
-                <div className="text-[11px] text-red-700 truncate">{os.travado_observacao}</div>
-              ) : null}
-              {os.data_previsao_entrega && (
-                <div className="text-[11px] text-neutral-400">
-                  Previsão {formatDateBR(os.data_previsao_entrega)}
+              <button
+                type="button"
+                onClick={() => onOpenOS(os.id)}
+                className="w-full text-left px-2.5 py-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs font-semibold">OS-{os.numero_os}</span>
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-sm ${cor.badge}`}>
+                    {STATUS_LABEL[status]}
+                  </span>
                 </div>
-              )}
-            </button>
+                <div className="text-sm font-medium text-neutral-900 leading-tight">
+                  {cliente?.nome || 'Cliente'}
+                </div>
+                <div className="text-xs text-neutral-500">
+                  {veiculo?.placa || 'sem placa'} {veiculo?.modelo ? `• ${veiculo.modelo}` : ''}
+                </div>
+                {atrasada && <div className="text-[11px] font-semibold text-red-700">Prazo atrasado</div>}
+                {status === 'TravadoPeca' && os.travado_observacao ? (
+                  <div className="text-[11px] text-red-700 truncate">{os.travado_observacao}</div>
+                ) : null}
+                {os.data_previsao_entrega && (
+                  <div className="text-[11px] text-neutral-400">
+                    Previsão {formatDateBR(os.data_previsao_entrega)}
+                  </div>
+                )}
+              </button>
+              {mostraProgresso ? (
+                <div className="px-2.5 pb-2 space-y-1.5">
+                  <OsProgressoCabecalho
+                    itens={osItens}
+                    expandido={progressoAberto}
+                    onToggle={() => setOsProgressoAberto((id) => (id === os.id ? null : os.id))}
+                  />
+                  {progressoAberto ? <OsProgressoItens itens={osItens} /> : null}
+                </div>
+              ) : null}
+            </div>
           );
         })}
       </div>

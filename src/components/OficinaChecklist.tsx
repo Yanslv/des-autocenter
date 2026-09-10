@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Check } from 'lucide-react';
-import { progressoChecklist } from '../utils/os';
+import { OsProgressoCabecalho } from './OsProgressoResumo';
 
 export type ItemChecklist = {
   id: string;
@@ -44,27 +44,18 @@ export const OficinaChecklist: React.FC<{
   podeMarcar: boolean;
   onToggle: (id: string, executado: boolean) => void;
 }> = ({ itens, podeMarcar, onToggle }) => {
-  const { feitos, total } = progressoChecklist(itens);
+  const [aberto, setAberto] = useState(true);
   const servicos = itens.filter((i) => i.tipo === 'servico');
   const pecas = itens.filter((i) => i.tipo !== 'servico');
-  const pct = total === 0 ? 0 : Math.round((feitos / total) * 100);
 
   return (
     <div className="bg-white border border-neutral-200 rounded-xl p-3 space-y-3">
-      <div>
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-xs font-semibold">Checklist</h3>
-          <span className="text-[11px] font-semibold tabular-nums text-neutral-600">
-            {feitos} de {total} feitos
-          </span>
-        </div>
-        <div className="mt-1.5 h-1.5 rounded-full bg-neutral-100 overflow-hidden">
-          <div className="h-full bg-[#cd3f00] rounded-full" style={{ width: `${pct}%` }} />
-        </div>
-      </div>
-      {total === 0 ? (
+      {itens.length === 0 ? (
         <p className="text-[11px] text-neutral-500">Nenhum serviço ou peça nesta OS.</p>
       ) : (
+        <OsProgressoCabecalho itens={itens} expandido={aberto} onToggle={() => setAberto((v) => !v)} />
+      )}
+      {aberto && itens.length > 0 ? (
         <>
           {servicos.length > 0 ? (
             <div>
@@ -83,7 +74,7 @@ export const OficinaChecklist: React.FC<{
             </div>
           ) : null}
         </>
-      )}
+      ) : null}
     </div>
   );
 };
