@@ -13,6 +13,8 @@ import { Campo, inputCompactClass } from './Campo';
 import { CorPicker } from './CorPicker';
 import { AcaoFooter, BarraFooter } from './AcaoFooter';
 import { FotoProduto, PecasServicosForm } from './PecasServicosForm';
+import { OficinaChecklist } from './OficinaChecklist';
+import { TravouModal } from './TravouModal';
 import { formatBRL, maskKmInput, parseKm, unidadesDoPedido } from '../utils/formatters';
 import { osPodeEditarItens, osPodeSeguirCotar, osTemPecaParaCotar } from '../utils/os';
 
@@ -26,6 +28,7 @@ export const OSDetalheView: React.FC<{ osId: string; onBack: () => void }> = ({ 
     veiculos,
     produtos,
     atualizarStatus,
+    travarOS,
     mandarParaCotar,
     marcarPdfEnviado,
     adicionarServico,
@@ -33,6 +36,7 @@ export const OSDetalheView: React.FC<{ osId: string; onBack: () => void }> = ({ 
     adicionarPecaEstoque,
     atualizarPrecoItem,
     marcarItemComprado,
+    marcarItemExecutado,
     removerItem,
     salvarEntradaVeiculo,
     atualizarCliente,
@@ -45,6 +49,7 @@ export const OSDetalheView: React.FC<{ osId: string; onBack: () => void }> = ({ 
   const osItens = itens.filter((i) => i.os_id === osId);
 
   const [erro, setErro] = useState('');
+  const [travouAberto, setTravouAberto] = useState(false);
   const [km, setKm] = useState(os?.km_entrada != null ? maskKmInput(String(os.km_entrada)) : '');
   const [modelo, setModelo] = useState(veiculo?.modelo || '');
   const [cor, setCor] = useState(veiculo?.cor || '');
@@ -57,6 +62,7 @@ export const OSDetalheView: React.FC<{ osId: string; onBack: () => void }> = ({ 
   const pecasComprar = osItens.filter((i) => i.tipo === 'produto' && i.origem_peca === 'comprar');
   const modoCotar = os?.status === 'AguardandoCotar';
   const osAberta = os?.status === 'Aberta';
+  const naOficina = os?.status === 'Fazendo' || os?.status === 'TravadoPeca';
   const temPreco = osItens.some((i) => Number(i.valor_unitario) > 0);
   const podeGerarPdf =
     isVendedor &&
@@ -341,6 +347,29 @@ export const OSDetalheView: React.FC<{ osId: string; onBack: () => void }> = ({ 
           </div>
           {pecasServicosForm}
         </>
+      ) : naOficina ? (
+        <>
+          <div className="bg-white border border-neutral-200 rounded-xl px-3 py-2 text-xs text-neutral-700 space-y-0.5">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500">Carro</p>
+            <p>{resumoEntrada}</p>
+            {km ? <p>KM {km}</p> : null}
+          </div>
+          {os.status === 'TravadoPeca' && os.travado_observacao ? (
+            <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 space-y-0.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-red-700">Travou</p>
+              <p className="text-xs font-medium text-red-900">
+                {osItens.find((i) => i.id === os.travado_item_id)?.descricao || 'Item da OS'}
+              </p>
+              <p className="text-xs text-red-800">{os.travado_observacao}</p>
+            </div>
+          ) : null}
+          <OficinaChecklist
+            itens={osItens}
+            podeMarcar
+            onToggle={(id, executado) => void run(() => marcarItemExecutado(id, executado))}
+          />
+          {pecasServicosForm}
+        </>
       ) : (
         <>
       <div className="bg-white border border-neutral-200 rounded-xl p-3 space-y-2">
@@ -468,7 +497,7 @@ export const OSDetalheView: React.FC<{ osId: string; onBack: () => void }> = ({ 
               label="Travou"
               icon={<Pause className="w-5 h-5" />}
               tom="perigo"
-              onClick={() => void run(() => atualizarStatus(os.id, 'TravadoPeca'))}
+              onClick={() => setTravouAberto(true)}
             />
           ) : null}
           {modoCotar ? (
@@ -487,6 +516,17 @@ export const OSDetalheView: React.FC<{ osId: string; onBack: () => void }> = ({ 
             />
           ) : null}
       </BarraFooter>
+
+      {travouAberto ? (
+        <TravouModal
+          itens={osItens}
+          onCancelar={() => setTravouAberto(false)}
+          onConfirmar={async (itemId, observacao) => {
+            await travarOS(os.id, itemId, observacao);
+            setTravouAberto(false);
+          }}
+        />
+      ) : null}
     </div>
   );
 };

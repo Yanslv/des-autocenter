@@ -20,7 +20,7 @@ export const STATUS_LABEL: Record<StatusOS, string> = {
   AguardandoCotar: 'Cotar / comprar',
   AguardandoCliente: 'Aguardando cliente',
   Fazendo: 'Fazendo',
-  TravadoPeca: 'Travado (peça)',
+  TravadoPeca: 'Travado',
   Pronto: 'Pronto',
   Entregue: 'Entregue',
 };
@@ -40,6 +40,8 @@ export const FORMA_LABEL: Record<FormaPagamento, string> = {
   Cartao: 'Cartão',
   Dinheiro: 'Dinheiro',
 };
+
+export const MOTIVOS_TRAVOU = ['Peça errada', 'Avaria', 'Peça faltando', 'Não encaixa', 'Outro'] as const;
 
 export const QUEIXAS_RAPIDAS = [
   'Revisão preventiva',

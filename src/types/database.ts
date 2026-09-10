@@ -214,6 +214,8 @@ export type Database = {
           prazo_dias: number;
           problema_relatado: string;
           status: string;
+          travado_item_id: string | null;
+          travado_observacao: string | null;
           valor_pago: number | null;
           valor_total: number;
           veiculo_id: string;
@@ -231,6 +233,8 @@ export type Database = {
           prazo_dias?: number;
           problema_relatado?: string;
           status?: string;
+          travado_item_id?: string | null;
+          travado_observacao?: string | null;
           veiculo_id: string;
         };
         Update: {
@@ -245,6 +249,8 @@ export type Database = {
           prazo_dias?: number;
           problema_relatado?: string;
           status?: string;
+          travado_item_id?: string | null;
+          travado_observacao?: string | null;
         };
         Relationships: [];
       };
@@ -253,6 +259,7 @@ export type Database = {
           comprado: boolean;
           descricao: string;
           eh_caixa: boolean;
+          executado: boolean;
           id: string;
           oficina_id: string;
           origem_peca: string | null;
@@ -267,6 +274,7 @@ export type Database = {
           comprado?: boolean;
           descricao: string;
           eh_caixa?: boolean;
+          executado?: boolean;
           oficina_id: string;
           origem_peca?: string | null;
           os_id: string;
@@ -279,6 +287,7 @@ export type Database = {
         Update: {
           comprado?: boolean;
           descricao?: string;
+          executado?: boolean;
           quantidade?: number;
           valor_total?: number;
           valor_unitario?: number;
@@ -485,6 +494,10 @@ export type Database = {
         Args: { p_forma: string; p_os_id: string; p_valor_pago: number };
         Returns: undefined;
       };
+      marcar_item_executado: {
+        Args: { p_executado: boolean; p_item_id: string };
+        Returns: undefined;
+      };
       minha_oficina_id: { Args: Record<string, never>; Returns: string };
       recalcular_total_orcamento: { Args: { p_orcamento_id: string }; Returns: undefined };
       recalcular_total_os: { Args: { p_os_id: string }; Returns: undefined };
@@ -502,6 +515,10 @@ export type Database = {
       };
       saida_produto: {
         Args: { p_motivo: string; p_produto_id: string; p_quantidade: number };
+        Returns: undefined;
+      };
+      travar_os: {
+        Args: { p_item_id: string; p_observacao: string; p_os_id: string };
         Returns: undefined;
       };
     };

@@ -13,6 +13,7 @@ import {
   type TipoClienteOrcamento,
   type TipoItemOrcamento,
 } from '../utils/orcamento';
+import { validarTravamento } from '../utils/os';
 
 type Cliente = Database['public']['Tables']['clientes']['Row'];
 type Veiculo = Database['public']['Tables']['veiculos']['Row'];
@@ -184,6 +185,7 @@ type OficinaContextType = {
   reabrirOrcamento: (orcamentoId: string) => Promise<void>;
   gerarOsDoOrcamento: (orcamentoId: string) => Promise<string>;
   atualizarStatus: (osId: string, status: StatusOS) => Promise<void>;
+  travarOS: (osId: string, itemId: string, observacao: string) => Promise<void>;
   mandarParaCotar: (osId: string) => Promise<void>;
   marcarPdfEnviado: (osId: string) => Promise<void>;
   adicionarServico: (osId: string, descricao: string, quantidade: number, valor: number) => Promise<void>;
@@ -196,6 +198,7 @@ type OficinaContextType = {
   ) => Promise<void>;
   atualizarPrecoItem: (itemId: string, valorUnitario: number) => Promise<void>;
   marcarItemComprado: (itemId: string) => Promise<void>;
+  marcarItemExecutado: (itemId: string, executado: boolean) => Promise<void>;
   removerItem: (itemId: string) => Promise<void>;
   salvarEntradaVeiculo: (input: {
     osId: string;
@@ -537,7 +540,23 @@ export const OficinaProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (status === 'Pronto' || status === 'Entregue') {
       patch.data_conclusao = new Date().toISOString();
     }
+    if (status === 'Fazendo') {
+      patch.travado_item_id = null;
+      patch.travado_observacao = null;
+    }
     const { error } = await supabase.from('ordens_servico').update(patch).eq('id', osId);
+    if (error) throw new Error(error.message);
+    await recarregar();
+  };
+
+  const travarOS = async (osId: string, itemId: string, observacao: string) => {
+    const erroValidacao = validarTravamento(itemId, observacao);
+    if (erroValidacao) throw new Error(erroValidacao);
+    const { error } = await supabase.rpc('travar_os', {
+      p_os_id: osId,
+      p_item_id: itemId,
+      p_observacao: observacao.trim(),
+    });
     if (error) throw new Error(error.message);
     await recarregar();
   };
@@ -638,6 +657,15 @@ export const OficinaProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const marcarItemComprado = async (itemId: string) => {
     const { error } = await supabase.from('os_itens').update({ comprado: true }).eq('id', itemId);
+    if (error) throw new Error(error.message);
+    await recarregar();
+  };
+
+  const marcarItemExecutado = async (itemId: string, executado: boolean) => {
+    const { error } = await supabase.rpc('marcar_item_executado', {
+      p_item_id: itemId,
+      p_executado: executado,
+    });
     if (error) throw new Error(error.message);
     await recarregar();
   };
@@ -1107,6 +1135,7 @@ export const OficinaProvider: React.FC<{ children: React.ReactNode }> = ({ child
       reabrirOrcamento,
       gerarOsDoOrcamento,
       atualizarStatus,
+      travarOS,
       mandarParaCotar,
       marcarPdfEnviado,
       adicionarServico,
@@ -1114,6 +1143,7 @@ export const OficinaProvider: React.FC<{ children: React.ReactNode }> = ({ child
       adicionarPecaEstoque,
       atualizarPrecoItem,
       marcarItemComprado,
+      marcarItemExecutado,
       removerItem,
       salvarEntradaVeiculo,
       atualizarCliente,

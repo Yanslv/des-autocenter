@@ -427,6 +427,9 @@ export const PainelView: React.FC<{
                 {veiculo?.placa || 'sem placa'} {veiculo?.modelo ? `• ${veiculo.modelo}` : ''}
               </div>
               {atrasada && <div className="text-[11px] font-semibold text-red-700">Prazo atrasado</div>}
+              {status === 'TravadoPeca' && os.travado_observacao ? (
+                <div className="text-[11px] text-red-700 truncate">{os.travado_observacao}</div>
+              ) : null}
               {os.data_previsao_entrega && (
                 <div className="text-[11px] text-neutral-400">
                   Previsão {formatDateBR(os.data_previsao_entrega)}
